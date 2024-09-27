@@ -1,0 +1,6 @@
+siteCode,siteName,type,terrain,domainCode,stateCode,latitude,longitude
+BART,"Bartlett Experimental Forest NEON",GRADIENT,TERRESTRIAL,D01,NH,44.06389,-71.28737
+HARV,"Harvard Forest & Quabbin Watershed NEON",CORE,TERRESTRIAL,D01,MA,42.53691,-72.17265
+STEI,"Steigerwaldt-Chequamegon NEON",GRADIENT,TERRESTRIAL,D05,WI,45.50894,-89.58637
+TREE,"Treehaven NEON",GRADIENT,TERRESTRIAL,D05,WI,45.49369,-89.58571
+UNDE,"University of Notre Dame Environmental Research Center NEON",CORE,TERRESTRIAL,D05,MI,46.23391,-89.53725
