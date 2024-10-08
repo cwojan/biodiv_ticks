@@ -222,6 +222,10 @@ ggplot(tree_mna_summary, aes(x = total_mna, y = mna, color = taxon_group)) +
   geom_point() +
   geom_smooth(method = "lm", se = FALSE)
 
+ggplot(tree_mna_summary, aes(x = richness, y = prop_mna, color = taxon_group)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+
 ggplot(filter(tree_mna_summary, taxon_group == "PELE"), aes(x = total_mna, y = prop_mna)) +
   geom_point() +
   geom_smooth(method = "lm", se = FALSE)
