@@ -95,3 +95,52 @@ ggplot(mammal_captures_taxon, aes(x = site_id, fill = taxon_group)) +
 
 ## next steps: proportion of community represented by PELE as x axis, 
 ## proportion of PELE with ticks as y axis, expect a positive relationship
+## scratch that, instead let's first look at how the relative proportions of taxons vary among
+## trapping sessions with different total mammal community sizes
+
+## one key part is identifying trapping sessions among the capture data
+## first let's look at the capture dates across sites
+
+## let's make a year column to easily visualize
+mammal_captures_taxon <- mammal_captures_taxon %>%
+  mutate(collect_date = as.Date(collect_date),
+         year = year(collect_date),
+         yday = yday(collect_date))
+
+## visualizing trapping sessions
+ggplot(mammal_captures_taxon, aes(x = yday, y = site_id)) +
+  geom_point() +
+  facet_wrap(vars(year))
+
+## trapping session are stratified well, what we need to do is categorize sets of capture dates as trapping sessions
+## by plot_id, such that collect_dates within a given number of days of each other are in the same trapping session
+## let's start by calculating the number of days between each collect_date and the first collect_date in the plot
+mammal_captures_taxon <- mammal_captures_taxon %>%
+  group_by(plot_id) %>%
+  mutate(trapping_day = as.numeric(collect_date - min(collect_date)))
+
+ggplot(mammal_captures_taxon, aes(x = trapping_day, y = plot_id)) +
+  geom_point() +
+  coord_cartesian(xlim = c(1, 150))
+
+## now let's identify "clusters" of values in the trapping session column
+## so that we can group nearby numbers together
+## first let's just separate out the plot_id and trapping_session columns into a new data frame
+trapping_sessions <- select(mammal_captures_taxon, plot_id, trapping_day) %>%
+  distinct() %>%
+  arrange(plot_id, trapping_day) %>%
+  mutate(plot_day = str_c(plot_id, "_", trapping_day),
+         day_diff = c(0, diff(trapping_day)),
+         session = cumsum(day_diff > 10),
+         plot_session = str_c(plot_id, "_", session))
+
+ggplot(trapping_sessions, aes(x = trapping_day, y = plot_id)) +
+  geom_point(aes(color = factor(session))) +
+  coord_cartesian(xlim = c(1, 150))
+
+## now let's join the trapping session data back to the capture data
+mammal_captures_taxon <- left_join(mammal_captures_taxon, trapping_sessions, by = c("plot_id", "trapping_day"))
+
+
+
+
