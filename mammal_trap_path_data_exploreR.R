@@ -141,6 +141,96 @@ ggplot(trapping_sessions, aes(x = trapping_day, y = plot_id)) +
 ## now let's join the trapping session data back to the capture data
 mammal_captures_taxon <- left_join(mammal_captures_taxon, trapping_sessions, by = c("plot_id", "trapping_day"))
 
+## let's make a data frame of only trapping sessions at TREE
+tree_captures <- filter(mammal_captures_taxon, site_id == "TREE")
+
+## now let's look at the captures with missing values for tag_id (AKA captures that escaped or are species that aren't tagged)
+View(filter(tree_captures, is.na(tag_id)))
+
+## there are none because we only have data for captures with tick info
+## thus wee need to create a session column for our earlier mammal_trap_df data frame
+## but first we need to create a trapping_day column in the data frame to join things
+mammal_trap_df <- mammal_trap_df %>%
+  group_by(plot_id) %>%
+  mutate(trapping_date = as.Date(collect_date),
+         trapping_day = as.numeric(trapping_date - min(trapping_date)))
+## and recreate sessions with full mammal data
+trapping_sessions <- select(mammal_trap_df, plot_id, trapping_day) %>%
+  distinct() %>%
+  arrange(plot_id, trapping_day) %>%
+  mutate(plot_day = str_c(plot_id, "_", trapping_day),
+         day_diff = c(0, diff(trapping_day)),
+         session = cumsum(day_diff > 10),
+         plot_session = str_c(plot_id, "_", session))
+
+## now join in sessions
+mammal_trap_df <- left_join(mammal_trap_df, trapping_sessions, by = c("plot_id", "trapping_day"))
+
+## now filter down to just captures from TREE
+tree_captures <- filter(mammal_trap_df, trap_status_code %in% c("4","5"), site_id == "TREE")
+
+## checking captures with no tag_id
+View(filter(tree_captures, is.na(tag_id)))
+
+## let's filter out fate = "escaped", as it is not possible to determine if they are recaptures from the same session
+tree_captures <- filter(tree_captures, fate != "escaped")
+
+## actually, let's just filter out all of the captures with missing tag_id
+tree_captures <- filter(tree_captures, !is.na(tag_id))
+
+## now let's make a new df called "tree_mna" that feature only unique tag_id values for each trapping session
+tree_mna <- tree_captures %>%
+  distinct(tag_id, plot_session)
+
+## now let's join in the rest of the mammal data into this new data frame
+tree_mna <- left_join(tree_mna, tree_captures, by = c("tag_id", "plot_session"))
+
+## adding taxon grouping to tree_mna
+tree_mna <- tree_mna %>%
+  mutate(taxon_group = case_when(taxon_id %in% c("PEMA", "PELE", "PESP", "PELEPEMA", "TAST", "ZAHU", "NAIN", "MYGA") ~ taxon_id,
+                                 TRUE ~ "Other"))
+
+## let's visualize the number of captures of each taxon group by session
+ggplot(tree_mna, aes(x = plot_session, fill = taxon_group)) +
+  geom_bar() +
+  coord_flip()
+
+## let's summarize this into a summary df
+tree_mna_summary <-  tree_mna %>%
+  group_by(plot_session, taxon_group) %>%
+  summarize(mna = n()) %>%
+  mutate(total_mna = sum(mna),
+         richness = n(),
+         prop_mna = mna / total_mna) %>%
+  separate(col = plot_session, into = c("site_id", "plot_num", "session"), sep = "_") %>%
+  mutate(session = as.numeric(session),
+         plot_id = str_c(site_id, "_", plot_num),
+         session_id = str_c(plot_id, "_", session)) %>% 
+  arrange(total_mna)
+
+tree_ranks <- distinct(tree_mna_summary, total_mna, session_id) %>%
+  mutate(mna_rank = row_number())
+
+tree_mna_summary <- left_join(tree_mna_summary, tree_ranks, by = c("total_mna", "session_id"))
+
+## let's visualize the mna of each taxon group by session
+ggplot(tree_mna_summary, aes(x = mna_rank, y = mna, fill = taxon_group)) +
+  geom_bar(stat = "identity", position = "stack")
+
+## visualize how the number of taxon groups varies with total mna
+ggplot(tree_mna_summary, aes(x = total_mna, y = mna, color = taxon_group)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+
+ggplot(filter(tree_mna_summary, taxon_group == "PELE"), aes(x = total_mna, y = prop_mna)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+
+ggplot(filter(tree_mna_summary, taxon_group == "PELE"), aes(x = richness, y = prop_mna)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+
+
 
 
 
