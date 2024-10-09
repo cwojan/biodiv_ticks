@@ -254,6 +254,69 @@ ggplot(filter(tree_mna_by_session_nonzero, taxon_id %in% c("PELE","PEMA","TAST",
   scale_x_continuous(breaks = seq(0, 13, 1)) +
   theme_bw()
 
+## now let's modify the tree_mna_by_session data to evaluate plot differences
+tree_mna_by_plot <- tree_mna_by_session %>%
+  distinct(plot_session, total_mna, richness) %>%
+  separate_wider_delim(cols = plot_session, names = c("site_id", "plot_num", "session"), 
+                       delim = "_", cols_remove = FALSE) %>%
+  mutate(session = as.numeric(session),
+         plot_id = as.factor(str_c(site_id, "_", plot_num)))
+
+## histogram of total_mna by plot
+ggplot(tree_mna_by_plot, aes(x = total_mna, fill = plot_id)) +
+  geom_histogram() +
+  facet_wrap(~plot_id)
+
+ggplot(tree_mna_by_plot, aes(x = richness, fill = plot_id)) +
+  geom_histogram() +
+  facet_wrap(~plot_id)
+
+## let's look specifically at TREE_028 with all the mna data
+tree_mna_by_session <- tree_mna_by_session %>%
+  separate_wider_delim(cols = plot_session, names = c("site_id", "plot_num", "session"), 
+                       delim = "_", cols_remove = FALSE) %>%
+  mutate(session = as.numeric(session),
+         plot_id = as.factor(str_c(site_id, "_", plot_num)))
+
+tree_mna_by_session_nonzero <- tree_mna_by_session_nonzero %>%
+  separate_wider_delim(cols = plot_session, names = c("site_id", "plot_num", "session"), 
+                       delim = "_", cols_remove = FALSE) %>%
+  mutate(session = as.numeric(session),
+         plot_id = as.factor(str_c(site_id, "_", plot_num)))
+
+ggplot(filter(tree_mna_by_session_nonzero, plot_id == "TREE_028", 
+              taxon_id %in% c("PELE","PEMA","TAST","NAIN","ZAHU","BLBR","SOCI","MYGA")), 
+       aes(x = richness, y = prop_mna, color = taxon_id)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~taxon_id)
+
+ggplot(filter(tree_mna_by_session_nonzero, plot_id == "TREE_027", 
+              taxon_id %in% c("PELE","PEMA","TAST","NAIN","ZAHU","BLBR","SOCI","MYGA")), 
+       aes(x = richness, y = prop_mna, color = taxon_id)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~taxon_id)
+
+ggplot(filter(tree_mna_by_session_nonzero, plot_id == "TREE_016", 
+              taxon_id %in% c("PELE","PEMA","TAST","NAIN","ZAHU","BLBR","SOCI","MYGA")), 
+       aes(x = total_mna, y = prop_mna, color = taxon_id)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~taxon_id)
+
+ggplot(filter(tree_mna_by_session_nonzero, plot_id == "TREE_019", 
+              taxon_id %in% c("PELE","PEMA","TAST","NAIN","ZAHU","BLBR","SOCI","MYGA")), 
+       aes(x = total_mna, y = prop_mna, color = taxon_id)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~taxon_id)
+
+
+
+
+###
+## old and outdated code below
 
 ## now filter down to just captures from TREE
 tree_captures <- filter(mammal_trap_df, trap_status_code %in% c("4","5"), site_id == "TREE")
