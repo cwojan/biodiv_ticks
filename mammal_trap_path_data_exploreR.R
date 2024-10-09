@@ -166,6 +166,95 @@ trapping_sessions <- select(mammal_trap_df, plot_id, trapping_day) %>%
 ## now join in sessions
 mammal_trap_df <- left_join(mammal_trap_df, trapping_sessions, by = c("plot_id", "trapping_day"))
 
+## now let's filter down to just TREE data
+tree_trap_df <- filter(mammal_trap_df, site_id == "TREE")
+
+## now we want to summarize for every session the minimum number alive (total unique captures in a session)
+## of each species, including species that are not present but were observed in other sessions
+## we will also want to include the number of unique species in each session
+## perhaps we can start by making a data frame with every combination of session and taxon_id
+
+## step 1, change sessions and taxon_id to factors with mutate
+tree_trap_df <- tree_trap_df %>%
+  mutate(plot_session = factor(plot_session),
+         taxon_id = factor(taxon_id))
+
+## step 2, create a data frame with every combination of session and taxon_id
+tree_mna_by_session <- tibble(plot_session = 
+                                rep(levels(tree_trap_df$plot_session), each = length(levels(tree_trap_df$taxon_id))),
+                              taxon_id = 
+                                rep(levels(tree_trap_df$taxon_id), length(levels(tree_trap_df$plot_session)))
+                              )
+
+## step 3, calculate minimum number alive for each combination
+## first make data frame of only captures that have tag_id values
+tree_trap_df_tagged <- filter(tree_trap_df, !is.na(tag_id))
+## then find only unique tag_ids by session
+tree_unique <- tree_trap_df_tagged %>%
+  distinct(tag_id, plot_session, taxon_id) %>%
+  arrange(plot_session, taxon_id)
+
+## now summarize the mna for each session and taxon_id
+tree_mna_summary <- tree_unique %>%
+  group_by(plot_session, taxon_id) %>%
+  summarize(mna = n())
+
+## now join this data into the tree_mna_by_session data frame, inputting zeros for when a taxon_id was not captured
+tree_mna_by_session <- left_join(tree_mna_by_session, tree_mna_summary, by = c("plot_session", "taxon_id")) %>%
+  mutate(mna = replace_na(mna, 0)) %>%
+  group_by(plot_session) %>%
+  mutate(total_mna = sum(mna),
+         richness = sum(mna > 0),
+         prop_mna = if_else(total_mna > 0, mna / total_mna, 0))
+
+## let's do some quick visulaizations
+## first, let's visualize the frequency of mna values for each of some select taxons
+ggplot(filter(tree_mna_by_session, taxon_id %in% c("PELE","PEMA","TAST","NAIN","ZAHU","BLBR","SOCI","MYGA")), 
+       aes(x = mna, fill = taxon_id)) +
+  geom_histogram() +
+  facet_wrap(~taxon_id)
+
+## now let's see how their prop_mna values vary with total_mna
+ggplot(filter(tree_mna_by_session, taxon_id %in% c("PELE","PEMA","TAST","NAIN","ZAHU","BLBR","SOCI","MYGA")), 
+       aes(x = total_mna, y = prop_mna, color = taxon_id)) +
+  geom_point() +
+  geom_smooth(method = "loess", se = FALSE) +
+  facet_wrap(~taxon_id)
+
+## including all the session with zero captures of a taxon throws things off...
+
+## but also let's look at the same relationship with richness
+ggplot(filter(tree_mna_by_session, taxon_id %in% c("PELE","PEMA","TAST","NAIN","ZAHU","BLBR","SOCI","MYGA")), 
+       aes(x = richness, y = prop_mna, color = taxon_id)) +
+  geom_point() +
+  geom_smooth(method = "loess", se = FALSE) +
+  facet_wrap(~taxon_id)
+
+## similar problem
+## let's try filtering out only the sessions where total_mna = 0
+tree_mna_by_session_nonzero <- filter(tree_mna_by_session, total_mna > 0)
+
+## now revisit the previous plots
+ggplot(filter(tree_mna_by_session_nonzero, taxon_id %in% c("PELE","PEMA","TAST","NAIN","ZAHU","BLBR","SOCI","MYGA")), 
+       aes(x = mna, fill = taxon_id)) +
+  geom_histogram() +
+  facet_wrap(~taxon_id)
+
+ggplot(filter(tree_mna_by_session_nonzero, taxon_id %in% c("PELE","PEMA","TAST","NAIN","ZAHU","BLBR","SOCI","MYGA")), 
+       aes(x = total_mna, y = prop_mna, color = taxon_id)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~taxon_id)
+
+ggplot(filter(tree_mna_by_session_nonzero, taxon_id %in% c("PELE","PEMA","TAST","NAIN","ZAHU","BLBR","SOCI","MYGA")), 
+       aes(x = richness, y = prop_mna, color = taxon_id)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~taxon_id) +
+  scale_x_continuous(breaks = seq(0, 13, 1)) +
+  theme_bw()
+
+
 ## now filter down to just captures from TREE
 tree_captures <- filter(mammal_trap_df, trap_status_code %in% c("4","5"), site_id == "TREE")
 
