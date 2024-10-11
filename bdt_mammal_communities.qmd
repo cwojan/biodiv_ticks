@@ -55,6 +55,7 @@ mammal_trap_df <- bind_rows(mammal_trap_data) %>%
 trapping_sessions <- select(mammal_trap_df, plot_id, trapping_date) %>%
   distinct() %>%
   arrange(plot_id, trapping_date) %>%
+  group_by(plot_id) %>%
   mutate(plot_date = str_c(plot_id, "_", trapping_date),
          date_diff = c(0, diff(trapping_date)),
          session = cumsum(date_diff > 10),
@@ -112,4 +113,28 @@ mna_by_session <- left_join(taxon_by_session, mna_summary,
   mutate(session = as.numeric(session),
          plot_id = as.factor(str_c(site_id, "_", plot_num)))
 
+```
+
+### Bootstrapping Communities
+
+Now we can use bootstrapping to generate null communities for each session. First, we will randomly sample species from the pool of species observed at each site and land cover class combination.
+
+First, some data processing to fill out our session information with year of session and land cover class of plot.
+
+```{r}
+## first we need to get the land cover class for each plot
+plot_land_cover <- mammal_trap_df %>%
+  select(plot_id, nlcd_class) %>%
+  distinct()
+
+## then we can join this into the session data
+mna_by_session <- left_join(mna_by_session, plot_land_cover, by = "plot_id")
+
+## and we can add the year of each session
+session_years <- mammal_trap_df %>%
+  select(plot_session, year) %>%
+  distinct()
+
+## and join them in as well
+mna_by_session <- left_join(mna_by_session, session_years, by = "plot_session")
 ```
