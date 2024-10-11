@@ -35,6 +35,8 @@ mammal_trap_df <- bind_rows(mammal_trap_data) %>%
   clean_names() %>%
   mutate(trap_status_code = str_sub(string = trap_status, start = 1, end = 1))
 
+######
+
 ## filter out only traps with captures
 mammal_captures <- filter(mammal_trap_df, trap_status_code %in% c("4","5"))
 
@@ -146,6 +148,8 @@ tree_captures <- filter(mammal_captures_taxon, site_id == "TREE")
 
 ## now let's look at the captures with missing values for tag_id (AKA captures that escaped or are species that aren't tagged)
 View(filter(tree_captures, is.na(tag_id)))
+
+########
 
 ## there are none because we only have data for captures with tick info
 ## thus wee need to create a session column for our earlier mammal_trap_df data frame
