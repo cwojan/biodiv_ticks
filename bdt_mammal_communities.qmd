@@ -1,0 +1,115 @@
+---
+title: "bdt_mammal_communities"
+format: html
+editor: visual
+---
+
+## Biodiversity Ticks Project: Small Mammal Community Analysis
+
+This document features code to evaluate the assembly of small mammal communities from NEON data. It aims to examine how the presence and abundance of certain species differs from what would be expected from neutral processes.
+
+### Setup
+
+First, load libraries and data:
+
+```{r}
+
+## loading packages
+library(tidyverse)
+library(neonUtilities)
+library(janitor)
+library(lubridate)
+
+## read reference data tables
+## load data product ids
+data_products <- read_csv("neon_data_ids.csv")
+## reformat data product names
+data_products$data_name <- make_clean_names(data_products$data_category)
+## load sites of interest
+sites <- read_csv("neon_sites.csv") %>%
+  clean_names()
+
+## load the data for each site with the map functional,
+## with the filename format: "raw_data/SITE/SITE_small_mammal_box_trapping_2012-01-01_2024-12-31/mam_pertrapnight.csv"
+## and the variable file format: "raw_data/SITE/SITE_small_mammal_box_trapping_2012-01-01_2024-12-31/variables_10072.csv"
+mammal_trap_data <- map(.x = sites$site_code,
+                        .f = function(site){
+                          readTableNEON(dataFile = paste0("raw_data/", site, "/", site, "_small_mammal_box_trapping_2012-01-01_2024-12-31/mam_pertrapnight.csv"),
+                                        varFile = paste0("raw_data/", site, "/", site, "_small_mammal_box_trapping_2012-01-01_2024-12-31/variables_10072.csv"))
+                        })
+```
+
+Now we need to process the mammal box trapping data to organize trapping nights into trapping sessions.
+
+```{r}
+
+## first changing the list we loaded into a data frame, and adding some helpful columns
+mammal_trap_df <- bind_rows(mammal_trap_data) %>%
+  clean_names() %>%
+  mutate(trap_status_code = str_sub(string = trap_status, start = 1, end = 1),
+         trapping_date = as.Date(collect_date),
+         year = year(trapping_date),
+         yday = yday(trapping_date))
+
+## then we will identify trapping sessions for each plot using the difference of days among trapping nights
+trapping_sessions <- select(mammal_trap_df, plot_id, trapping_date) %>%
+  distinct() %>%
+  arrange(plot_id, trapping_date) %>%
+  mutate(plot_date = str_c(plot_id, "_", trapping_date),
+         date_diff = c(0, diff(trapping_date)),
+         session = cumsum(date_diff > 10),
+         plot_session = str_c(plot_id, "_", session))
+
+## and then the session data can be joined into the main data frame
+mammal_trap_df <- left_join(mammal_trap_df, trapping_sessions, by = c("plot_id", "trapping_date"))
+```
+
+### Taxon Abundance by Plot and Session
+
+Now we can calculate the abundance of each taxon in each trapping session. We want a long format data frame with a row for each combination of plot, session, and taxon.
+
+```{r}
+## first let's change taxon_id and plot_session to factors
+mammal_trap_df <- mammal_trap_df %>%
+  mutate(taxon_id = as.factor(taxon_id),
+         plot_session = as.factor(plot_session))
+
+## now we can create a df with columns for session and taxon, with every possible combo
+taxon_by_session <- tibble(plot_session = rep(levels(mammal_trap_df$plot_session), 
+                                              each = length(levels(mammal_trap_df$taxon_id))),
+                           taxon_id = rep(levels(mammal_trap_df$taxon_id), 
+                                          length(levels(mammal_trap_df$plot_session)))
+                          )
+```
+
+Then we can start calculating the abundance of each taxon in each session.
+
+```{r}
+## first we make a data frame of only captures that have tag_id values
+tagged_captures <- mammal_trap_df %>%
+  filter(!is.na(tag_id))
+
+## then find only the unique tag_id values by session
+unique_captures <- tagged_captures %>%
+  distinct(tag_id, plot_session, taxon_id) %>%
+  arrange(plot_session, taxon_id)
+
+## now summarize the minimum number alive (number of unique captures) for each taxon in each session
+mna_summary <- unique_captures %>%
+  group_by(plot_session, taxon_id) %>%
+  summarize(mna = n())
+
+## this can be joined into the taxon by session df
+mna_by_session <- left_join(taxon_by_session, mna_summary, 
+                            by = c("plot_session", "taxon_id")) %>%
+  mutate(mna = replace_na(mna, 0)) %>%
+  group_by(plot_session) %>%
+  mutate(total_mna = sum(mna),
+         richness = sum(mna > 0),
+         prop_mna = if_else(total_mna > 0, mna / total_mna, 0)) %>%
+  separate_wider_delim(cols = plot_session, names = c("site_id", "plot_num", "session"), 
+                       delim = "_", cols_remove = FALSE) %>%
+  mutate(session = as.numeric(session),
+         plot_id = as.factor(str_c(site_id, "_", plot_num)))
+
+```
