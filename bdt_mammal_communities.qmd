@@ -138,3 +138,129 @@ session_years <- mammal_trap_df %>%
 ## and join them in as well
 mna_by_session <- left_join(mna_by_session, session_years, by = "plot_session")
 ```
+
+Now let's create lists of species observed at each site and land cover class combination.
+
+```{r}
+
+## first let's summarize the total mna by taxon_id at each site and land cover class combo
+## to identify potentially rare species
+site_nlcd_summary <- mna_by_session %>%
+  ungroup() %>%
+  filter(mna > 0) %>%
+  select(site_id, nlcd_class, taxon_id, mna) %>%
+  group_by(site_id, nlcd_class, taxon_id) %>%
+  summarize(total_mna = sum(mna)) %>%
+  ungroup()
+
+## let's also check the full scientific name for each taxon_id
+taxon_names <- mammal_trap_df %>%
+  select(taxon_id, scientific_name) %>%
+  distinct()
+
+## now filter for only the taxon_id values that don't have "sp." in their scientific name
+## and remove "PELEPEMA" as it is imprecise
+species_names <- taxon_names %>%
+  filter(!str_detect(scientific_name, "sp."), taxon_id != "PELEPEMA")
+
+## now let's limit our site_nlcd data to only the precise species ids
+## by filtering to only taxon_id values in species_names
+site_nlcd_summary <- site_nlcd_summary %>%
+  filter(taxon_id %in% species_names$taxon_id)
+
+```
+
+Now let's modify our session information to include only the taxons with precise ids like above.
+
+```{r}
+## filter the mna_by_session data to only include the precise species
+## and also create a "presence" column indicating whether the mna > 0 for that species
+species_by_session <- mna_by_session %>%
+  filter(taxon_id %in% species_names$taxon_id) %>%
+  mutate(presence = as.numeric(mna > 0),
+         precise_richness = sum(presence)) %>%
+  select(site_id, plot_id, nlcd_class, plot_session, session, taxon_id, presence, precise_richness)
+
+## create a data frame of just the precise_richness values by session
+precise_richness_by_session <- species_by_session %>%
+  select(site_id, plot_id, nlcd_class, plot_session, session, precise_richness) %>%
+  distinct()
+
+```
+
+Now we can bootstrap communities for each session by randomly sampling species from the pool of species observed at each site and land cover class combination, using the observed precise_richness values as the number of species to sample.
+
+```{r}
+
+## create a reference data frame of plots, sites, and nlcd classes for the function to pull from
+plot_info <- species_by_session %>%
+  ungroup() %>%
+  select(site_id, plot_id, nlcd_class) %>%
+  distinct()
+
+## testing on one plot, BART_001
+test_plot <- "BART_001"
+test_richnesses <- precise_richness_by_session %>%
+  ungroup() %>%
+  filter(plot_id == test_plot) %>%
+  select(session, precise_richness) %>%
+  arrange(session, precise_richness)
+
+## create a function to randomly sample n species from the pool of species
+## observed at a site and land cover class combination
+sample_species <- function(session_richness, plot, reps = 1000){
+  ## grab site id and nlcd class for the plot
+  site <- str_sub(string = plot_id, start = 1, end = 4) ## first four characters of plot_id
+  nlcd <- plot_info %>%
+    filter(plot_id == plot_name) %>%
+    pull(nlcd_class) 
+  
+  ## get the species pool for the site and nlcd class
+  species_pool <- site_nlcd_summary %>%
+    filter(site_id == site, nlcd_class == nlcd) %>%
+    pull(taxon_id)
+  
+  ## create a data frame of the species samples
+  sample_comms <- expand_grid(session_richness, rep = 1:reps) %>%
+    mutate(species_sample = map(precise_richness, ~sample(species_pool, size = .x, replace = FALSE))) 
+
+    ## create a data frame of the species samples with presence information
+  out <- expand_grid(session_richness, species = species_pool) %>%
+    uncount(weights = reps) %>%
+    mutate(rep = rep(1:reps, times = nrow(session_richness) * length(species_pool))) %>%
+    arrange(rep, session, species) %>%
+    left_join(sample_comms, by = c("rep", "session", "precise_richness")) %>%
+    group_by(rep, session) %>%
+    mutate(presence = as.numeric(species %in% unlist(species_sample)))
+
+  return(out)
+}
+
+## test out function
+
+test_out <- sample_species(session_richness = test_richnesses, plot = "BART_001")
+
+test_summary <- test_out %>%
+  group_by(precise_richness, species) %>%
+  summarize(presence = mean(presence)) %>%
+  ungroup()
+
+test_summary_obs <- species_by_session %>%
+  ungroup() %>%
+  filter(plot_id == "BART_001") %>%
+  group_by(precise_richness, taxon_id) %>%
+  summarize(presence = mean(presence)) %>%
+  ungroup()
+
+## scatterplot of "PELE" presence (y axis) across richness (x axis)
+ggplot(filter(test_summary, species == "TAST"), aes(x = precise_richness, y = presence)) +
+  geom_point() +
+  geom_point(data = filter(test_summary_obs, taxon_id == "TAST", plot_id == "BART_001"),
+             aes(x = precise_richness, y = presence), color = "red")
+
+ggplot(filter(species_by_session, taxon_id == "PELE", plot_id == "BART_001"), aes(x = precise_richness, fill = factor(presence))) +
+  geom_bar()
+
+
+
+```
