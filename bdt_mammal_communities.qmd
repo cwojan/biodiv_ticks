@@ -208,11 +208,11 @@ test_richnesses <- precise_richness_by_session %>%
 
 ## create a function to randomly sample n species from the pool of species
 ## observed at a site and land cover class combination
-sample_species <- function(session_richness, plot, reps = 1000){
+sample_species <- function(plot, reps = 1000){
   ## grab site id and nlcd class for the plot
-  site <- str_sub(string = plot_id, start = 1, end = 4) ## first four characters of plot_id
+  site <- str_sub(string = plot, start = 1, end = 4) ## first four characters of plot_id
   nlcd <- plot_info %>%
-    filter(plot_id == plot_name) %>%
+    filter(plot_id == plot) %>%
     pull(nlcd_class) 
   
   ## get the species pool for the site and nlcd class
@@ -220,46 +220,106 @@ sample_species <- function(session_richness, plot, reps = 1000){
     filter(site_id == site, nlcd_class == nlcd) %>%
     pull(taxon_id)
   
+  ## get the observed richnesses for the plot's sessions
+  session_richness <- precise_richness_by_session %>%
+    ungroup() %>%
+    filter(plot_id == plot, precise_richness > 0) %>%
+    select(session, precise_richness) %>%
+    arrange(session, precise_richness)
+  
   ## create a data frame of the species samples
   sample_comms <- expand_grid(session_richness, rep = 1:reps) %>%
     mutate(species_sample = map(precise_richness, ~sample(species_pool, size = .x, replace = FALSE))) 
 
-    ## create a data frame of the species samples with presence information
+  ## create a data frame of the species samples with presence information
   out <- expand_grid(session_richness, species = species_pool) %>%
     uncount(weights = reps) %>%
     mutate(rep = rep(1:reps, times = nrow(session_richness) * length(species_pool))) %>%
     arrange(rep, session, species) %>%
     left_join(sample_comms, by = c("rep", "session", "precise_richness")) %>%
     group_by(rep, session) %>%
-    mutate(presence = as.numeric(species %in% unlist(species_sample)))
+    mutate(presence = as.numeric(species %in% unlist(species_sample)),
+           plot_id = plot)
 
   return(out)
 }
 
+```
+
+Next block is function testing...
+
+```{r}
+
 ## test out function
 
-test_out <- sample_species(session_richness = test_richnesses, plot = "BART_001")
+test_out <- sample_species(plot = "TREE_028", reps = 100)
 
 test_summary <- test_out %>%
-  group_by(precise_richness, species) %>%
+  group_by(rep, species) %>%
   summarize(presence = mean(presence)) %>%
-  ungroup()
+  ungroup() %>%
+  mutate(type = "simulated") %>%
+  rename(taxon_id = species)
 
 test_summary_obs <- species_by_session %>%
   ungroup() %>%
-  filter(plot_id == "BART_001") %>%
-  group_by(precise_richness, taxon_id) %>%
+  filter(plot_id == "TREE_028", taxon_id %in% levels(as.factor(test_summary$taxon_id))) %>%
+  group_by(taxon_id) %>%
   summarize(presence = mean(presence)) %>%
+  ungroup() %>%
+  mutate(type = "observed", rep = NA) %>%
+  bind_rows(test_summary)
+
+conf_ints <- test_summary %>%
+  group_by(taxon_id) %>%
+  summarize(mean_presence = mean(presence),
+            lower = quantile(presence, probs = 0.025),
+            upper = quantile(presence, probs = 0.975))  
+
+ggplot(data = test_summary_obs, aes(x = taxon_id, color = taxon_id)) +
+  geom_jitter(width = 0.2, height = 0, aes(y = presence, 
+                                    alpha = type, size = type)) +
+  geom_errorbar(data = conf_ints, aes(ymin = lower, ymax = upper), width = 0.5, linewidth = 1) +
+  scale_alpha_manual(values = c(1, 0.2)) +
+  scale_size_manual(values = c(3, 1)) +
+  coord_cartesian(ylim = c(0, 1)) +
+  labs(title = "Observed vs. Simulated Species Presence",
+       x = "Taxon ID",
+       y = "Presence") +
+  theme_bw()
+
+## now try for all plots with map
+simulated_comms <- map(plot_info$plot_id, sample_species, reps = 1000, .progress = TRUE)
+
+## and bind the list of data frames into one data frame
+simulated_comms_df <- bind_rows(simulated_comms)
+
+## now summarize
+simulated_comms_summary <- simulated_comms_df %>%
+  group_by(rep, plot_id, species) %>%
+  summarize(sim_presence = mean(presence)) %>%
+  ungroup() %>%
+  rename(taxon_id = species)
+
+observed_comms_summary <- species_by_session %>%
+  ungroup() %>%
+  group_by(plot_id, taxon_id) %>%
+  summarize(obs_presence = mean(presence)) %>%
   ungroup()
 
-## scatterplot of "PELE" presence (y axis) across richness (x axis)
-ggplot(filter(test_summary, species == "TAST"), aes(x = precise_richness, y = presence)) +
-  geom_point() +
-  geom_point(data = filter(test_summary_obs, taxon_id == "TAST", plot_id == "BART_001"),
-             aes(x = precise_richness, y = presence), color = "red")
+comms_summary <- left_join(simulated_comms_summary, observed_comms_summary, 
+                           by = c("plot_id", "taxon_id")) %>%
+  mutate(site = str_sub(string = plot_id, start = 1, end = 4))
 
-ggplot(filter(species_by_session, taxon_id == "PELE", plot_id == "BART_001"), aes(x = precise_richness, fill = factor(presence))) +
-  geom_bar()
+ggplot(data = filter(comms_summary, taxon_id == "PELE"), aes(x = taxon_id)) +
+  geom_boxplot(aes(y = sim_presence), alpha = 0.1, color = "grey") +
+  geom_point(aes(y = obs_presence), size = 3, color = "blue") +
+  facet_wrap(~plot_id) +
+  theme_bw()
+
+## future steps: 
+## confidence intervals for simulated species presence by plot_id
+## compare observed and simulated species presence by plot_id
 
 
 
