@@ -238,6 +238,91 @@ sample_species <- function(plot, reps = 1000){
 
 ```
 
+Now run the function on all plots to generate simulated communities.
+
+```{r}
+
+## simulate communities for all plots
+simulated_comms <- map(plot_info$plot_id, sample_species, reps = 1000, .progress = TRUE)
+
+## and bind the list of data frames into one data frame
+simulated_comms_df <- bind_rows(simulated_comms)
+
+```
+
+### Testing Species Presence
+
+Now we can look at how the presence of certain species differs from what would be expected from neutral processes. First, we can do a basic test of overall presence by plot.
+
+```{r}
+
+## calculate effect size and p_values for all species and plots
+
+## first generate deviations of each species for each sim rep and observed data 
+sim_presence_deviations <- simulated_comms_df %>%
+  group_by(plot_id, species, rep) %>%
+  summarize(rep_mean = mean(presence), .groups = "drop") %>% ## calculate simulated means
+  rename(taxon_id = species) %>%
+  left_join(species_by_session %>% ## join in observed data
+              group_by(plot_id, taxon_id) %>%
+              summarize(obs_mean = mean(presence), .groups = "drop")
+            , by = c("plot_id", "taxon_id")) %>% 
+  group_by(plot_id, taxon_id) %>%
+  mutate(sim_mean = mean(rep_mean), ## calculate mean of simulated means, and then deviations
+         sim_deviations = abs(rep_mean - sim_mean),
+         obs_deviation = abs(obs_mean - sim_mean),
+         sim_eff = rep_mean - sim_mean,
+         effect_size = obs_mean - sim_mean) %>%
+  ungroup()
+
+## now perform comparison testing
+sim_presence_comp <- sim_presence_deviations %>%
+  group_by(plot_id, taxon_id, effect_size) %>%
+  summarize(extreme_count = sum(sim_deviations >= obs_deviation), ## calculate p values
+            p_value = extreme_count / n(),
+            .groups = "drop") %>%
+  mutate(site_id = str_sub(string = plot_id, start = 1, end = 4))
+
+## now we can make a plot of some of the findings
+
+## first arrange a subset of species
+sp_pres_comp_gg <- species_presence_comp %>%
+  filter(taxon_id %in% c("PELE","PEMA","TAST", "MYGA", "NAIN")) %>%
+  arrange(taxon_id, effect_size) %>%
+  group_by(site_id, taxon_id) %>%
+  mutate(rank = row_number(),
+         significant = p_value < 0.05)
+
+## now prep the null distribution
+sim_pres_gg <- sim_presence_deviations %>%
+  mutate(site_id = str_sub(string = plot_id, start = 1, end = 4)) %>%
+  filter(taxon_id %in% c("PELE","PEMA","TAST", "MYGA", "NAIN")) %>%
+  left_join(sp_pres_comp_gg %>% select(site_id, plot_id, taxon_id, rank), 
+            by = c("site_id", "plot_id", "taxon_id")) %>%
+  group_by(site_id, plot_id, taxon_id, rank) %>%
+  summarize(sim_dev_mean = mean(sim_eff),
+            lower = quantile(sim_eff, probs = 0.025),
+            upper = quantile(sim_eff, probs = 0.975),
+            .groups = "drop")
+
+
+## now create a plot
+ggplot(data = sp_pres_comp_gg, aes(x = factor(rank), color = site_id)) +
+  geom_point(aes(y = effect_size, alpha = significant)) +
+  geom_errorbar(data = sim_pres_gg, aes(ymin = lower, ymax = upper, color = site_id),
+                alpha = 0.5, width = 1) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_alpha_manual(values = c(0.3, 1)) +
+  facet_grid(rows = vars(taxon_id), cols = vars(site_id)) +
+  labs(x = "Plot", 
+       y = "Deviation from Expected Proportion of \nTrapping Sessions Species is Present") +
+  theme_bw() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+```
+
+
 Next block is function testing...
 
 ```{r}
@@ -245,25 +330,6 @@ Next block is function testing...
 ## test out function
 
 test_out <- sample_species(plot = "TREE_028", reps = 100)
-
-# Example data
-observed_value <- 15
-simulated_values <- c(1, 2, 3, 4, 6, 7, 8, 10)
-
-# Calculate the center (mean or median)
-center_value <- mean(simulated_values)
-
-# Compute the absolute deviation of the observed value and simulations from the center
-obs_deviation <- abs(observed_value - center_value)
-sim_deviations <- abs(simulated_values - center_value)
-
-# Count how many simulated deviations are greater than or equal to the observed deviation
-extreme_count <- sum(sim_deviations >= obs_deviation)
-
-# Calculate the two-tailed p-value
-p_value <- extreme_count / length(simulated_values)
-p_value
-
 
 
 ## summarize species presence counts by rep, compare to observed species counts
@@ -284,6 +350,67 @@ counts_by_rep <- test_out %>%
   summarize(extreme_count = sum(sim_deviations >= obs_deviation),
             p_value = extreme_count / n(),
             .groups = "drop")
+
+pres_by_rich <- test_out %>%
+  group_by(plot_id, species, rep, precise_richness) %>%
+  summarize(rep_mean = mean(presence), .groups = "drop") %>%
+  rename(taxon_id = species) %>%
+  left_join(species_by_session %>%
+              group_by(plot_id, taxon_id, precise_richness) %>%
+              summarize(obs_mean = mean(presence), .groups = "drop")
+            , by = c("plot_id", "taxon_id", "precise_richness")) %>%
+  group_by(plot_id, taxon_id, precise_richness) %>%
+  mutate(sim_mean = mean(rep_mean),
+         sim_deviations = abs(rep_mean - sim_mean),
+         obs_deviation = abs(obs_mean - sim_mean),
+         effect_size = obs_mean - sim_mean) %>%
+  group_by(plot_id, taxon_id, precise_richness, effect_size) %>%
+  summarize(extreme_count = sum(sim_deviations >= obs_deviation),
+            p_value = extreme_count / n(),
+            .groups = "drop")
+
+rich_cdf <- test_out %>%
+  group_by(plot_id, species, rep, precise_richness) %>%
+  summarize(rep_count = sum(presence), .groups = "drop") %>%
+  rename(taxon_id = species) %>%
+  left_join(species_by_session %>%
+              group_by(plot_id, taxon_id, precise_richness) %>%
+              summarize(obs_count = sum(presence), .groups = "drop")
+            , by = c("plot_id", "taxon_id", "precise_richness")) %>%
+  group_by(plot_id, taxon_id, rep) %>%
+  mutate(sim_cum_count = cumsum(rep_count),
+         sim_sum_count = sum(rep_count),
+         sim_cum_prop = sim_cum_count / sim_sum_count,
+         obs_cum_count = cumsum(obs_count),
+         obs_sum_count = sum(obs_count),
+         obs_cum_prop = obs_cum_count / obs_sum_count,
+         cum_prop_diff = obs_cum_prop - sim_cum_prop,
+         sum_diff = sum(cum_prop_diff)) %>%
+  group_by(plot_id, taxon_id, precise_richness) %>%
+  mutate(sim_mean_prop = mean(sim_cum_prop),
+         sim_deviation = abs(sim_cum_prop - sim_mean_prop),
+         obs_deviation = abs(obs_cum_prop - sim_mean_prop),
+         effect_size = obs_cum_prop - sim_mean_prop) 
+
+ggplot(data = rich_cdf %>% filter(rep == 1), aes(x = factor(precise_richness), color = taxon_id)) +
+  geom_jitter(aes(y = sim_mean_prop), alpha = 0.3, width = 0.2, height = 0) +
+  geom_jitter(aes(y = obs_cum_prop), alpha = 1, width = 0, height = 0) +
+  facet_wrap(~taxon_id) +
+  theme_bw()
+
+rich_cdf_summary <- rich_cdf %>%
+  group_by(plot_id, taxon_id, rep) %>%
+  summarize(sum_sim_dev = sum(sim_deviation),
+            sum_obs_dev = sum(obs_deviation),
+            effect_size = sum(effect_size),
+            .groups = "drop")
+
+rich_cdf_p <- rich_cdf_summary %>%
+  group_by(plot_id, taxon_id, effect_size) %>%
+  summarize(extreme_count = sum(sum_sim_dev >= sum_obs_dev),
+            p_value = extreme_count / n(),
+            .groups = "drop")
+  
 
 test_summary <- test_out %>%
   group_by(rep, species, plot_id) %>%
@@ -367,6 +494,37 @@ ggplot(data = sp_pres_comp_gg, aes(x = rank, y = effect_size, color = site_id)) 
   facet_grid(rows = vars(taxon_id), cols = vars(site_id)) +
   theme_bw()
 
+##presence by richness
+pres_by_richness_comp <- simulated_comms_df %>%
+  group_by(plot_id, species, rep, precise_richness) %>%
+  summarize(rep_mean = mean(presence), .groups = "drop") %>%
+  rename(taxon_id = species) %>%
+  left_join(species_by_session %>%
+              group_by(plot_id, taxon_id, precise_richness) %>%
+              summarize(obs_mean = mean(presence), .groups = "drop")
+            , by = c("plot_id", "taxon_id", "precise_richness")) %>%
+  group_by(plot_id, taxon_id, precise_richness) %>%
+  mutate(sim_mean = mean(rep_mean),
+         sim_deviations = abs(rep_mean - sim_mean),
+         obs_deviation = abs(obs_mean - sim_mean),
+         effect_size = obs_mean - sim_mean) %>%
+  group_by(plot_id, taxon_id, precise_richness, effect_size) %>%
+  summarize(extreme_count = sum(sim_deviations >= obs_deviation),
+            p_value = extreme_count / n(),
+            .groups = "drop") %>%
+  mutate(site_id = str_sub(string = plot_id, start = 1, end = 4))
+
+pres_by_rich_gg <- pres_by_richness_comp %>%
+  filter(taxon_id %in% c("PELE","PEMA","TAST")) %>%
+  mutate(significant = p_value < 0.05)
+
+ggplot(data = pres_by_rich_gg, aes(x = factor(precise_richness), y = effect_size, color = site_id)) +
+  geom_jitter(aes(alpha = significant, size = significant), width = 0.2, height = 0) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_alpha_manual(values = c(0.3, 1)) +
+  scale_size_manual(values = c(1, 2)) +
+  facet_grid(rows = vars(taxon_id), cols = vars(site_id)) +
+  theme_bw()
 
 ## now summarize
 simulated_comms_summary <- simulated_comms_df %>%
