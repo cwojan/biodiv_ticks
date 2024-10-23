@@ -184,7 +184,8 @@ species_by_session <- mna_by_session %>%
 ## create a data frame of just the precise_richness values by session
 precise_richness_by_session <- species_by_session %>%
   select(site_id, plot_id, nlcd_class, plot_session, session, precise_richness) %>%
-  distinct()
+  distinct() %>%
+  ungroup
 
 ```
 
@@ -238,15 +239,72 @@ sample_species <- function(plot, reps = 1000){
 
 ```
 
+Trying ChatGPT's optimized version of the function (actually slower):
+
+```{r}
+
+sample_species_optimized <- function(plot, reps = 1000) {
+  ## Grab site id and nlcd class for the plot
+  site <- str_sub(string = plot, start = 1, end = 4)
+  nlcd <- plot_info %>%
+    filter(plot_id == plot) %>%
+    pull(nlcd_class)
+  
+  ## Get the species pool for the site and nlcd class
+  species_pool <- site_nlcd_summary %>%
+    filter(site_id == site, nlcd_class == nlcd) %>%
+    pull(taxon_id)
+  
+  ## Get the observed richnesses for the plot's sessions
+  session_richness <- precise_richness_by_session %>%
+    filter(plot_id == plot, precise_richness > 0) %>%
+    select(session, precise_richness) %>%
+    arrange(session)
+  
+  ## Generate species samples for each session's richness
+  all_samples <- session_richness %>%
+    mutate(species_samples = map(precise_richness, 
+      ~ replicate(reps, sample(species_pool, .x, replace = FALSE), simplify = FALSE)))
+
+  ## Convert samples to presence/absence matrix more efficiently
+  results <- all_samples %>%
+    unnest(species_samples) %>%
+    group_by(session) %>%
+    mutate(rep = 1:reps) %>%
+    unnest_longer(species_samples) %>%
+    group_by(session, rep) %>%
+    summarise(
+      presence_matrix = list(as.numeric(species_pool %in% species_samples)),
+      .groups = "drop"
+    )
+
+  ## Output data frame with session-level presence information
+  out <- results %>%
+    unnest_wider(presence_matrix, names_sep = "_") %>%
+    rename_with(~ species_pool, starts_with("presence_matrix_")) %>%
+    mutate(plot_id = plot) %>%
+    pivot_longer(cols = -c(plot_id, session, rep), 
+                 names_to = "species", 
+                 values_to = "presence")
+
+  return(out)
+}
+
+
+
+```
+
 Now run the function on all plots to generate simulated communities.
 
 ```{r}
 
 ## simulate communities for all plots
-simulated_comms <- map(plot_info$plot_id, sample_species, reps = 1000, .progress = TRUE)
+simulated_comms <- map(plot_info$plot_id, sample_species, reps = 2000, .progress = TRUE)
 
 ## and bind the list of data frames into one data frame
 simulated_comms_df <- bind_rows(simulated_comms)
+
+rm(simulated_comms)
 
 ```
 
@@ -283,10 +341,12 @@ sim_presence_comp <- sim_presence_deviations %>%
             .groups = "drop") %>%
   mutate(site_id = str_sub(string = plot_id, start = 1, end = 4))
 
+## note that these p values don't correspond to the confidence intervals of the sim deviations because they are asymmetric
+
 ## now we can make a plot of some of the findings
 
 ## first arrange a subset of species
-sp_pres_comp_gg <- species_presence_comp %>%
+sp_pres_comp_gg <- sim_presence_comp %>%
   filter(taxon_id %in% c("PELE","PEMA","TAST", "MYGA", "NAIN")) %>%
   arrange(taxon_id, effect_size) %>%
   group_by(site_id, taxon_id) %>%
@@ -300,25 +360,72 @@ sim_pres_gg <- sim_presence_deviations %>%
   left_join(sp_pres_comp_gg %>% select(site_id, plot_id, taxon_id, rank), 
             by = c("site_id", "plot_id", "taxon_id")) %>%
   group_by(site_id, plot_id, taxon_id, rank) %>%
-  summarize(sim_dev_mean = mean(sim_eff),
+  summarize(sim_eff_mean = mean(sim_eff),
             lower = quantile(sim_eff, probs = 0.025),
             upper = quantile(sim_eff, probs = 0.975),
             .groups = "drop")
 
 
 ## now create a plot
-ggplot(data = sp_pres_comp_gg, aes(x = factor(rank), color = site_id)) +
-  geom_point(aes(y = effect_size, alpha = significant)) +
-  geom_errorbar(data = sim_pres_gg, aes(ymin = lower, ymax = upper, color = site_id),
+ggplot(data = sp_pres_comp_gg, aes(x = rank, color = taxon_id)) +
+  geom_point(aes(y = effect_size)) +
+  geom_errorbar(data = sim_pres_gg, aes(ymin = lower, ymax = upper, color = taxon_id),
                 alpha = 0.5, width = 1) +
   geom_hline(yintercept = 0, linetype = "dashed") +
-  scale_alpha_manual(values = c(0.3, 1)) +
   facet_grid(rows = vars(taxon_id), cols = vars(site_id)) +
-  labs(x = "Plot", 
-       y = "Deviation from Expected Proportion of \nTrapping Sessions Species is Present") +
+  scale_x_continuous(name = "Plot",
+                   sec.axis = sec_axis(~ . , name = "Site", 
+                                         breaks = NULL, labels = NULL)) +
+  labs(y = "Deviation from Expected Proportion of \nTrapping Sessions Species is Present",
+       color = "Species") +
   theme_bw() +
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank())
+
+```
+
+Next, we can look at how the presence of species differs by richness.
+
+```{r}
+
+pres_by_richness_deviations <- simulated_comms_df %>%
+  group_by(plot_id, species, rep, precise_richness) %>%
+  summarize(rep_mean = mean(presence), .groups = "drop") %>%
+  rename(taxon_id = species) %>%
+  left_join(species_by_session %>%
+              group_by(plot_id, taxon_id, precise_richness) %>%
+              summarize(obs_mean = mean(presence), .groups = "drop")
+            , by = c("plot_id", "taxon_id", "precise_richness")) %>%
+  group_by(plot_id, taxon_id, precise_richness) %>%
+  mutate(sim_mean = mean(rep_mean),
+         sim_deviations = abs(rep_mean - sim_mean),
+         obs_deviation = abs(obs_mean - sim_mean),
+         sim_eff = rep_mean - sim_mean,
+         effect_size = obs_mean - sim_mean) %>%
+  mutate(site_id = str_sub(string = plot_id, start = 1, end = 4))
+
+pres_by_rich_eff_gg <- pres_by_richness_deviations %>%
+  distinct(plot_id, taxon_id, precise_richness, effect_size, site_id) %>%
+  filter(taxon_id %in% c("PELE"))
+
+pres_by_rich_sim_gg <- pres_by_richness_deviations %>%
+  group_by(plot_id, taxon_id, precise_richness, site_id) %>%
+  summarize(sim_eff_mean = mean(sim_eff),
+            lower = quantile(sim_eff, probs = 0.025),
+            upper = quantile(sim_eff, probs = 0.975),
+            .groups = "drop")  %>%
+  filter(taxon_id %in% c("PELE"))
+
+ggplot(data = pres_by_rich_eff_gg, aes(x = precise_richness, color = site_id)) +
+  geom_jitter(aes(y = effect_size), width = 0.2, height = 0) +
+  geom_errorbar(data = pres_by_rich_sim_gg, aes(ymin = lower, ymax = upper, color = site_id),
+                alpha = 0.5, width = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_x_continuous(name = "Species Richness",
+                     breaks = 1:max(pres_by_rich_eff_gg$precise_richness)) +
+  scale_color_brewer(palette = "Set1") +
+  facet_wrap(vars(plot_id)) +
+  theme_bw()
 
 ```
 
