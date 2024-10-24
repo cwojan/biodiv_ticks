@@ -424,6 +424,8 @@ ggplot(data = pres_by_rich_eff_gg, aes(x = precise_richness, color = site_id)) +
   scale_x_continuous(name = "Species Richness",
                      breaks = 1:max(pres_by_rich_eff_gg$precise_richness)) +
   scale_color_brewer(palette = "Set1") +
+  labs(y = "Deviation from Expected Proportion of \nTrapping Sessions Species is Present",
+       color = "Site") +
   facet_wrap(vars(plot_id)) +
   theme_bw()
 
