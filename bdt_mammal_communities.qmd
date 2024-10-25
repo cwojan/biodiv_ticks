@@ -430,6 +430,55 @@ ggplot(data = pres_by_rich_eff_gg, aes(x = precise_richness, color = site_id)) +
   theme_bw()
 
 ```
+Combining the above blocks into a single data wrangling sequence for average deviation and covariance w/ richness.
+
+```{r}
+
+## first generate deviations of each species for each sim rep and observed data 
+sim_presence_deviations <- simulated_comms_df %>%
+  group_by(plot_id, species, rep) %>%
+  summarize(rep_mean = mean(presence),
+            rep_cov = cov(presence, precise_richness),
+            .groups = "drop") %>% ## calculate simulated means and covariances with richness
+  rename(taxon_id = species) %>%
+  left_join(species_by_session %>% ## join in observed data
+              group_by(plot_id, taxon_id) %>%
+              summarize(obs_mean = mean(presence),
+                        obs_cov = cov(presence, precise_richness),
+                        .groups = "drop")
+            , by = c("plot_id", "taxon_id")) %>% 
+  group_by(plot_id, taxon_id) %>%
+  mutate(sim_mean = mean(rep_mean), ## calculate mean of simulated means/covs, then deviations
+         sim_cov = mean(rep_cov),
+         sim_mean_eff = rep_mean - sim_mean,
+         obs_mean_eff = obs_mean - sim_mean,
+         sim_cov_eff = rep_cov - sim_cov,
+         obs_cov_eff = obs_cov - sim_cov) %>%
+  ungroup()
+
+species_by_plot_gg <- sim_presence_deviations %>%
+  filter(taxon_id %in% c("PELE")) %>%
+  group_by(plot_id, taxon_id, obs_mean_eff, obs_cov_eff) %>%
+  summarize(lower_mean = quantile(sim_mean_eff, probs = 0.025),
+            upper_mean = quantile(sim_mean_eff, probs = 0.975),
+            lower_cov = quantile(sim_cov_eff, probs = 0.025, na.rm = TRUE),
+            upper_cov = quantile(sim_cov_eff, probs = 0.975, na.rm = TRUE),
+            .groups = "drop") %>%
+  mutate(site_id = str_sub(string = plot_id, start = 1, end = 4))
+
+ggplot(data = species_by_plot_gg, aes(x = obs_cov_eff, y = obs_mean_eff, color = site_id)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_hline(aes(yintercept = lower_mean, color = site_id), linetype = "dashed") +
+  geom_hline(aes(yintercept = upper_mean, color = site_id), linetype = "dashed") +
+  geom_vline(aes(xintercept = lower_cov, color = site_id), linetype = "dashed") +
+  geom_vline(aes(xintercept = upper_cov, color = site_id), linetype = "dashed") +
+  facet_wrap(vars(plot_id)) +
+  theme_bw()
+
+```
+
 
 
 Next block is function testing...
