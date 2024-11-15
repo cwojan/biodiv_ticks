@@ -578,11 +578,11 @@ sample_community <- function(session_id, reps = 1000){
   
   ## simulate community compositions for given session
   sim_comms <- tibble(rep = rep(1:reps, each = proc_mna),
-                      species = replicate(reps,
-                                          sample(species_observed, 
-                                                 size = proc_mna, replace = TRUE)) %>%
+                      taxon_id = replicate(reps,
+                                           sample(species_observed, 
+                                                  size = proc_mna, replace = TRUE)) %>%
                         as.vector()) %>%
-    group_by(rep, species) %>%
+    group_by(rep, taxon_id) %>%
     summarize(sim_mna = n(), .groups = "drop") %>%
     mutate(session_id = session_id)
 
@@ -601,10 +601,96 @@ Now let's try the function on all sessions...
 
 ## simulate communities for all sessions with processed species
 sim_comms <- map(unique(proc_sessions$plot_session), 
-                 sample_community, reps = 5, .progress = TRUE)
+                 sample_community, reps = 1000, .progress = TRUE)
 
 ## and bind the list of data frames into one data frame
 sim_comms_df <- bind_rows(sim_comms)
+
+rm(sim_comms)
+
+```
+
+#### Testing Abundance/Community Composition
+
+Now let's try comparing observed community composition to simulated communities.
+
+```{r}
+
+## create smaller proc_session data
+proc_session_data <- proc_sessions %>%
+  select(plot_session, plot_id, site_id, nlcd_class, year, taxon_id, mna,
+         precise_richness, proc_richness, proc_total_mna) %>%
+  distinct() %>%
+  rename(session_id = plot_session,
+         obs_mna = mna)
+
+## first merge the processed session data with simulated communities
+sim_comms_data <- left_join(sim_comms_df, proc_session_data, by = c("session_id", "taxon_id")) %>%
+  mutate(sim_prop = sim_mna / proc_total_mna,
+         obs_prop = obs_mna / proc_total_mna)
+
+## filter for only PELE, compare to sims
+pele_comms <- sim_comms_data %>%
+  filter(taxon_id == "PELE") %>%
+  group_by(session_id, site_id) %>%
+  summarize(sim_mean = mean(sim_prop),
+            upper = quantile(sim_prop, probs = 0.975),
+            lower = quantile(sim_prop, probs = 0.025),
+            obs_prop = mean(obs_prop),
+            .groups = "drop") %>%
+  distinct() %>%
+  group_by(site_id) %>%
+  arrange(obs_prop) %>%
+  mutate(rank = row_number()) %>%
+  arrange(site_id, rank)
+
+## plotting
+ggplot(data = pele_comms, aes(x = rank, color = site_id)) +
+  geom_point(aes(y = obs_prop)) +
+  geom_errorbar(aes(ymin = lower, ymax = upper, color = site_id),
+                alpha = 0.5, width = 0.5) +
+  facet_wrap(~site_id) +
+  scale_x_continuous(name = "Plot",
+                   sec.axis = sec_axis(~ . , name = "Site", 
+                                         breaks = NULL, labels = NULL)) +
+  labs(y = "Proportion of Individuals in Community",
+       color = "Site") +
+  theme_bw() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+## calculate proprtions of communities with PELE overrepresented
+pele_over_props <- pele_comms %>%
+  mutate(over = obs_prop > upper) %>%
+  group_by(site_id) %>%
+  summarize(over_count = sum(over),
+            total = n(),
+            prop_over = over_count / total)
+
+## check when PELE is overrepresented
+pele_over <- pele_comms %>%
+  filter(obs_prop > upper) %>%
+  group_by(site_id) %>%
+  arrange(obs_prop) %>%
+  mutate(rank = row_number()) %>%
+  arrange(site_id, rank)
+
+ggplot(data = pele_over, aes(x = rank, color = site_id)) +
+  geom_point(aes(y = obs_prop)) +
+  geom_errorbar(aes(ymin = lower, ymax = upper, color = site_id),
+                alpha = 0.5, width = 0.5) +
+  facet_wrap(~site_id) +
+  scale_x_continuous(name = "Plot",
+                   sec.axis = sec_axis(~ . , name = "Site", 
+                                         breaks = NULL, labels = NULL)) +
+  labs(y = "Proportion of Individuals in Community",
+       color = "Site") +
+  theme_bw() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+
+
 
 ```
 
