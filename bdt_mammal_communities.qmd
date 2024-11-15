@@ -139,6 +139,8 @@ session_years <- mammal_trap_df %>%
 mna_by_session <- left_join(mna_by_session, session_years, by = "plot_session")
 ```
 
+#### Bootstrapping Presence/Absence
+
 Now let's create lists of species observed at each site and land cover class combination.
 
 ```{r}
@@ -239,60 +241,6 @@ sample_species <- function(plot, reps = 1000){
 
 ```
 
-Trying ChatGPT's optimized version of the function (actually slower):
-
-```{r}
-
-sample_species_optimized <- function(plot, reps = 1000) {
-  ## Grab site id and nlcd class for the plot
-  site <- str_sub(string = plot, start = 1, end = 4)
-  nlcd <- plot_info %>%
-    filter(plot_id == plot) %>%
-    pull(nlcd_class)
-  
-  ## Get the species pool for the site and nlcd class
-  species_pool <- site_nlcd_summary %>%
-    filter(site_id == site, nlcd_class == nlcd) %>%
-    pull(taxon_id)
-  
-  ## Get the observed richnesses for the plot's sessions
-  session_richness <- precise_richness_by_session %>%
-    filter(plot_id == plot, precise_richness > 0) %>%
-    select(session, precise_richness) %>%
-    arrange(session)
-  
-  ## Generate species samples for each session's richness
-  all_samples <- session_richness %>%
-    mutate(species_samples = map(precise_richness, 
-      ~ replicate(reps, sample(species_pool, .x, replace = FALSE), simplify = FALSE)))
-
-  ## Convert samples to presence/absence matrix more efficiently
-  results <- all_samples %>%
-    unnest(species_samples) %>%
-    group_by(session) %>%
-    mutate(rep = 1:reps) %>%
-    unnest_longer(species_samples) %>%
-    group_by(session, rep) %>%
-    summarise(
-      presence_matrix = list(as.numeric(species_pool %in% species_samples)),
-      .groups = "drop"
-    )
-
-  ## Output data frame with session-level presence information
-  out <- results %>%
-    unnest_wider(presence_matrix, names_sep = "_") %>%
-    rename_with(~ species_pool, starts_with("presence_matrix_")) %>%
-    mutate(plot_id = plot) %>%
-    pivot_longer(cols = -c(plot_id, session, rep), 
-                 names_to = "species", 
-                 values_to = "presence")
-
-  return(out)
-}
-
-
-
-```
 
 Now run the function on all plots to generate simulated communities.
 
@@ -308,7 +256,7 @@ rm(simulated_comms)
 
 ```
 
-### Testing Species Presence
+#### Testing Species Presence
 
 Now we can look at how the presence of certain species differs from what would be expected from neutral processes. First, we can do a basic test of overall presence by plot.
 
@@ -533,6 +481,134 @@ ggplot(data = pres_rich_cov_pele, aes(x = rank, color = site_id)) +
 
 ```
 
+#### Bootstrapping Abundance/Community Composition
+
+Now we want to simulate community compositions given the species that were observed such that communities are evenly composed of each observed species. Then we can compare observed composition to see how certain species are over- or under-represented.
+
+First we should limit our species of interest to only those that are fully processed, and thus have true abundance estimates.
+
+```{r}
+
+## check tagged captures for species associated with ear tag id or pit tag id formats
+processed_tags <- tagged_captures %>%
+  mutate(tag_suffix = str_sub(string = tag_id, start = str_locate_all(test_tag, "\\.")[[1]][3] + 1)) %>%
+  filter(str_starts(tag_suffix, "O") == FALSE,
+         str_starts(tag_suffix, "0") == FALSE,
+         str_starts(tag_suffix, as.character(year)) == FALSE)
+
+## check out processed tags by species
+processed_summary <- processed_tags %>%
+  group_by(taxon_id) %>%
+  summarize(count = n(), .groups = "drop") %>%
+  arrange(count)
+
+process_check <- processed_tags %>%
+  filter(taxon_id %in% c("SYCO"))
+
+## create a string vector of fully-processed species codes based on summary and my own knowledge
+processed_species <- c("PELE", "PEMA", "MYGA", "MIPE", "MIPI", "NAIN", "ZAHU", "TAST", "TAHU", "TAMI", "SYCO")
+
+```
+
+We also want to make a mna by session df that includes mna and precise richness. Also, we want to create a "processed richness" value that is the number of processed species observed.
+
+```{r}
+
+## creating mna_by_session df with only precise species ids, 
+## as well as identifying processed animals/richness
+mna_by_session_precise <- mna_by_session %>%
+  filter(taxon_id %in% species_names$taxon_id) %>%
+  mutate(presence = as.numeric(mna > 0),
+         precise_richness = sum(presence),
+         processed = as.numeric(taxon_id %in% processed_species),
+         proc_presence = as.numeric(processed == 1 & presence == 1),
+         proc_richness = sum(proc_presence))
+
+## now make a new df with only sessions where processed animals were caught
+proc_sessions <- mna_by_session_precise %>%
+  filter(proc_richness > 0,
+         taxon_id %in% processed_species) %>%
+  group_by(plot_session) %>%
+  mutate(proc_total_mna = sum(mna)) %>%
+  ungroup()
+
+```
+
+Now we need to make a function that goes through each session in proc_sessions and generates null communities composed of the processed species in roughly even proportions.
+
+```{r}
+
+## create function to randomly sample individuals from processed species observed
+## until the total number of individuals sampled is equal to 
+## the total number of processed individuals observed
+
+## test in pieces
+session_id <- "TREE_028_10"
+species_observed <- proc_sessions %>%
+  filter(plot_session == session_id,
+         presence == 1) %>%
+  pull(taxon_id)
+
+proc_mna <- proc_sessions %>%
+  filter(plot_session == session_id) %>%
+  pull(proc_total_mna) %>%
+  unique()
+
+reps <- 5
+
+sim_comms <- tibble(rep = rep(1:reps, each = proc_mna),
+                    species = as.vector(replicate(reps,
+                                        sample(species_observed, size = proc_mna, replace = TRUE)))) %>%
+  group_by(rep, species) %>%
+  summarize(sim_mna = n(), .groups = "drop")
+
+## put it all together
+sample_community <- function(session_id, reps = 1000){
+  ## get the processed species observed in the session
+  species_observed <- proc_sessions %>%
+    filter(plot_session == session_id,
+           presence == 1) %>%
+    pull(taxon_id)
+  
+  ## get total number of processed individuals observed in the session
+  proc_mna <- proc_sessions %>%
+    filter(plot_session == session_id) %>%
+    pull(proc_total_mna) %>%
+    unique()
+  
+  ## simulate community compositions for given session
+  sim_comms <- tibble(rep = rep(1:reps, each = proc_mna),
+                      species = replicate(reps,
+                                          sample(species_observed, 
+                                                 size = proc_mna, replace = TRUE)) %>%
+                        as.vector()) %>%
+    group_by(rep, species) %>%
+    summarize(sim_mna = n(), .groups = "drop") %>%
+    mutate(session_id = session_id)
+
+  
+  return(sim_comms)
+}
+
+## test on a single session
+sample_community(session_id = "TREE_028_10", reps = 5)
+
+```
+
+Now let's try the function on all sessions...
+
+```{r}
+
+## simulate communities for all sessions with processed species
+sim_comms <- map(unique(proc_sessions$plot_session), 
+                 sample_community, reps = 5, .progress = TRUE)
+
+## and bind the list of data frames into one data frame
+sim_comms_df <- bind_rows(sim_comms)
+
+```
+
+### Old/Misc. Code
 
 Next block is function testing...
 
