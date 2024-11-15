@@ -491,7 +491,7 @@ First we should limit our species of interest to only those that are fully proce
 
 ## check tagged captures for species associated with ear tag id or pit tag id formats
 processed_tags <- tagged_captures %>%
-  mutate(tag_suffix = str_sub(string = tag_id, start = str_locate_all(test_tag, "\\.")[[1]][3] + 1)) %>%
+  mutate(tag_suffix = str_sub(string = tag_id, start = str_locate_all(tag_id, "\\.")[[1]][3] + 1)) %>%
   filter(str_starts(tag_suffix, "O") == FALSE,
          str_starts(tag_suffix, "0") == FALSE,
          str_starts(tag_suffix, as.character(year)) == FALSE)
@@ -632,7 +632,7 @@ sim_comms_data <- left_join(sim_comms_df, proc_session_data, by = c("session_id"
 ## filter for only PELE, compare to sims
 pele_comms <- sim_comms_data %>%
   filter(taxon_id == "PELE") %>%
-  group_by(session_id, site_id) %>%
+  group_by(session_id, site_id, precise_richness, proc_richness) %>%
   summarize(sim_mean = mean(sim_prop),
             upper = quantile(sim_prop, probs = 0.975),
             lower = quantile(sim_prop, probs = 0.025),
@@ -658,6 +658,20 @@ ggplot(data = pele_comms, aes(x = rank, color = site_id)) +
   theme_bw() +
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank())
+
+## compare pele overrepresentation by richness
+pele_comms <- pele_comms %>%
+  mutate(over = obs_prop > upper) 
+
+ggplot(pele_comms, aes(x = over, y = proc_richness, color = site_id)) +
+  geom_jitter(height = 0.1, width = 0.3, alpha = 0.5) +
+  geom_boxplot(fill = NA) +
+  facet_wrap(~site_id) +
+  labs(x = "PELE Overrepresented",
+       y = "Species Richness") +
+  theme_bw()
+
+t.test(pele_comms$proc_richness ~ pele_comms$over)
 
 ## calculate proprtions of communities with PELE overrepresented
 pele_over_props <- pele_comms %>%
