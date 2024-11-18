@@ -537,11 +537,6 @@ proc_sessions <- mna_by_session_precise %>%
 Now we need to make a function that goes through each session in proc_sessions and generates null communities composed of the processed species in roughly even proportions.
 
 ```{r}
-
-## create function to randomly sample individuals from processed species observed
-## until the total number of individuals sampled is equal to 
-## the total number of processed individuals observed
-
 ## test in pieces
 session_id <- "TREE_028_10"
 species_observed <- proc_sessions %>%
@@ -561,6 +556,14 @@ sim_comms <- tibble(rep = rep(1:reps, each = proc_mna),
                                         sample(species_observed, size = proc_mna, replace = TRUE)))) %>%
   group_by(rep, species) %>%
   summarize(sim_mna = n(), .groups = "drop")
+```
+
+```{r}
+
+## create function to randomly sample individuals from processed species observed
+## until the total number of individuals sampled is equal to 
+## the total number of processed individuals observed
+
 
 ## put it all together
 sample_community <- function(session_id, reps = 1000){
@@ -584,7 +587,7 @@ sample_community <- function(session_id, reps = 1000){
                         as.vector()) %>%
     group_by(rep, taxon_id) %>%
     summarize(sim_mna = n(), .groups = "drop") %>%
-    mutate(session_id = session_id)
+    mutate(session_id = session_id, proc_mna = proc_mna)
 
   
   return(sim_comms)
@@ -632,7 +635,7 @@ sim_comms_data <- left_join(sim_comms_df, proc_session_data, by = c("session_id"
 ## filter for only PELE, compare to sims
 pele_comms <- sim_comms_data %>%
   filter(taxon_id == "PELE") %>%
-  group_by(session_id, site_id, precise_richness, proc_richness) %>%
+  group_by(session_id, site_id, precise_richness, proc_richness, proc_total_mna) %>%
   summarize(sim_mean = mean(sim_prop),
             upper = quantile(sim_prop, probs = 0.975),
             lower = quantile(sim_prop, probs = 0.025),
@@ -671,7 +674,28 @@ ggplot(pele_comms, aes(x = over, y = proc_richness, color = site_id)) +
        y = "Species Richness") +
   theme_bw()
 
-t.test(pele_comms$proc_richness ~ pele_comms$over)
+## check relationship between richness and mna
+proc_rich_mna <- proc_session_data %>%
+  distinct(session_id, site_id, proc_richness, proc_total_mna)
+
+ggplot(proc_rich_mna, aes(x = proc_richness, y = proc_total_mna, color = site_id)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  facet_wrap(~site_id) +
+  labs(x = "Processed Species Richness",
+       y = "Total Processed Individuals") +
+  theme_bw()
+
+## compare pele overrepresentation by total_mna
+
+ggplot(pele_comms, aes(x = over, y = proc_total_mna, color = site_id)) +
+  geom_jitter(height = 0.1, width = 0.3, alpha = 0.5) +
+  geom_boxplot(fill = NA) +
+  facet_wrap(~site_id) +
+  labs(x = "PELE Overrepresented",
+       y = "Community Abundance") +
+  theme_bw()
+
 
 ## calculate proprtions of communities with PELE overrepresented
 pele_over_props <- pele_comms %>%
