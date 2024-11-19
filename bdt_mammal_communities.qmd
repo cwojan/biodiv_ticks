@@ -648,11 +648,11 @@ sim_comms_data <- left_join(sim_comps_df, proc_session_data, by = c("session_id"
 
 ## now make an effects dataframe
 sim_comms_effects <- sim_comms_data %>%
-  group_by(session_id, site_id, taxon_id, precise_richness, proc_richness, proc_total_mna) %>%
+  group_by(session_id, site_id, taxon_id, obs_mna, precise_richness, proc_richness, proc_total_mna) %>%
   mutate(sim_mean_prop = mean(sim_prop),
          sim_prop_eff = sim_prop - sim_mean_prop,
          obs_prop_eff = obs_prop - sim_mean_prop) %>%
-  group_by(session_id, site_id, taxon_id, precise_richness, proc_richness, proc_total_mna,
+  group_by(session_id, site_id, taxon_id, obs_mna, precise_richness, proc_richness, proc_total_mna,
            sim_mean_prop, obs_prop, obs_prop_eff) %>%
   summarize(sim_prop_eff_lower = quantile(sim_prop_eff, probs = 0.025),
             sim_prop_eff_upper = quantile(sim_prop_eff, probs = 0.975),
@@ -777,7 +777,8 @@ Now we want to create a csv identifying plot level presence data for each specie
 community_effects <- species_by_session %>%
   select(-precise_richness) %>%
   left_join(presence_effects, by = c("plot_id", "taxon_id")) %>%
-  left_join(sim_comms_effects, by = c("plot_session" = "session_id", "taxon_id"))
+  left_join(sim_comms_effects %>% select(-site_id), 
+            by = c("plot_session" = "session_id", "taxon_id"))
   
 ## write to csv
 write_csv(community_effects, "processed_data/mammal_community_effects.csv")
