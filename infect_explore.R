@@ -83,17 +83,23 @@ pele_presence <- pele_comms %>%
 pele_borrelia <- pele_presence %>%
   left_join(borrelia_sp_summary, by = c("site_id", "nlcd_class"))
 
-ggplot(pele_borrelia, aes(x = obs_pres_effect, y = proportion_positive)) +
+## summarize by nlcd_class
+pele_borrelia_summary <- pele_borrelia %>%
+  group_by(site_id, nlcd_class, n_samples, proportion_positive) %>%
+  summarize(mean_pele_deviation = mean(obs_pres_effect, na.rm = TRUE))
+
+ggplot(pele_borrelia_summary, aes(x = mean_pele_deviation, y = proportion_positive)) +
   geom_point() +
   geom_smooth(method = "lm", se = FALSE) +
-  labs(x = "Deviation from Expected Proportion of Trapping Session PELE Present",
+  labs(x = "Average Deviation from Expected Proportion of Trapping Session PELE Present",
        y = "Proportion of Borrelia sp. positive tests",
        title = "Borrelia sp. positive tests vs PELE presence") +
   coord_cartesian(xlim = c(0, 0.7), ylim = c(0, 1)) +
   theme_bw()
 
-quick_lm <- glm(pele_borrelia$proportion_positive ~ pele_borrelia$obs_pres_effect,
+quick_lm <- glm(proportion_positive ~ mean_pele_deviation,
+                data = pele_borrelia_summary,
                 family = binomial,
-                weights = pele_borrelia$n_samples)
+                weights = n_samples)
 summary(quick_lm)
 
