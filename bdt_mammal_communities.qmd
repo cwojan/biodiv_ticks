@@ -241,7 +241,6 @@ sample_species <- function(plot, reps = 1000){
 
 ```
 
-
 Now run the function on all plots to generate simulated communities.
 
 ```{r}
@@ -388,6 +387,7 @@ ggplot(data = pres_by_rich_pele, aes(x = precise_richness, color = site_id)) +
 
 
 ```
+
 Combining the above blocks into a single data wrangling sequence for average deviation and covariance w/ richness. (not really, this is raw covariance, not deviation covariance)
 
 ```{r}
