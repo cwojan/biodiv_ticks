@@ -40,11 +40,20 @@ mamm_labels <- c(
 upset(
   data = mamm_wide, intersect = c("PEMA", "PELE", "MYGA", "TAST", "NAIN"),
   name = "Community Composition (by trap session)",
-  group_by = "sets",
   base_annotations = list(
     "Intersection size" = intersection_size(counts = FALSE)
   ),
   labeller = as_labeller(mamm_labels),
+  themes = upset_modify_themes(
+    list(
+      "Intersection size" = theme(
+        axis.title = element_blank()
+      ),
+      "overall_sizes" = theme(
+        axis.title = element_blank()
+      )
+    )
+  ),
   queries = list(
     upset_query(
       set = "PELE",
@@ -52,9 +61,35 @@ upset(
       name = "Highest Quality Disease Host"
     ),
     upset_query(
-      group = "PELE",
+      intersect = "PELE",
+      fill = "blue", color = "blue",
+      name = "Highest Quality Disease Host"
+    ),
+    upset_query(
+      intersect = c("PELE", "PEMA"),
+      fill = "blue", color = "blue",
+      name = "Highest Quality Disease Host"
+    ),
+    upset_query(
+      intersect = c("PELE", "MYGA"),
+      fill = "blue", color = "blue",
+      name = "Highest Quality Disease Host"
+    ),
+    upset_query(
+      intersect = c("PELE", "TAST"),
+      fill = "blue", color = "blue",
+      name = "Highest Quality Disease Host"
+    ),
+    upset_query(
+      intersect = c("PELE", "NAIN"),
       fill = "blue", color = "blue",
       name = "Highest Quality Disease Host"
     )
+  ),
+  guides = "collect"
+) +
+  theme(
+    legend.position = "bottom",
+    text = element_text(size = 16),
+    axis.text.y = element_text(size = 12)
   )
-)
