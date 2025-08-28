@@ -6,4 +6,5 @@
 .DS_Store
 raw_data/
 processed_data/
+old_data/
 figures/

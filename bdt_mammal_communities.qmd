@@ -779,9 +779,12 @@ community_effects <- species_by_session %>%
   left_join(presence_effects, by = c("plot_id", "taxon_id")) %>%
   left_join(sim_comms_effects %>% select(-site_id), 
             by = c("plot_session" = "session_id", "taxon_id"))
+
+## save date
+curr_date <- Sys.Date()
   
 ## write to csv
-write_csv(community_effects, "processed_data/mammal_community_effects.csv")
+write_csv(community_effects, str_c("processed_data/mammal_community_effects_", curr_date, ".csv"))
 
 ## consider NAs for future...
 

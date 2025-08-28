@@ -2,6 +2,7 @@
 #' file: neon_data_import
 #' description: download neon data for use in small mammal biodiversity and tick analysis
 #' using neonUtilities package
+#' Note: this can't overwrite data currently
 ##
 
 ## load packages
@@ -68,3 +69,6 @@ stack_data <- function(site, dpID, startdate, enddate){
 ## download data for each site
 map2(.x = rep(data_products$dpID, nrow(sites)), .y = rep(sites$siteCode, each = nrow(data_products)), 
      ~stack_data(site = .y, dpID = .x, startdate = "2012-01-01", enddate = "2024-12-31"))
+
+## create txt file in raw_data folder recording date of download
+write(paste("Data downloaded on", Sys.Date()), file = "raw_data/download_date.txt")
