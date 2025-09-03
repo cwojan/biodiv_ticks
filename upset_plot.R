@@ -164,6 +164,44 @@ upset(
     axis.text.y = element_text(size = 12)
   )
 
+upset(
+  data = mamm_wide %>% filter(mean_yday > 125), 
+  intersect = c("PEMA", "PELE", "MYGA", "BLBR", "TAST", "NAIN"),
+  name = "Community Composition (by trap session)",
+  base_annotations = list(
+    "Intersection size" = intersection_size(counts = FALSE,
+                                            mapping = aes(fill = pele_pres)) +
+      scale_fill_manual(values = c("#008080", "#E66101"),
+                        name = "White-footed Mouse\nPresence",
+                        labels = c("Absent", "Present"))
+  ),
+  set_sizes = (
+    upset_set_size(geom = geom_bar(aes(fill = pele_pres))) +
+      scale_fill_manual(values = c("#008080", "#E66101"),
+                        name = "White-footed Mouse\nPresence",
+                        labels = c("Absent", "Present"))
+  ),
+  labeller = as_labeller(mamm_labels),
+  themes = upset_modify_themes(
+    list(
+      "Intersection size" = theme(
+        legend.position = c(-0.15,0.2),
+        axis.title = element_blank()
+      ),
+      "overall_sizes" = theme(
+        axis.title = element_blank(),
+        legend.position = "none"
+      )
+    )
+  ),
+  queries = query_list,
+) +
+  theme(
+    text = element_text(size = 16),
+    axis.text.y = element_text(size = 12)
+  )
+
+
 
 upset(
   data = mamm_wide, intersect = c("PEMA", "PELE", "MYGA", "BLBR", "TAST", "NAIN"),
@@ -181,7 +219,7 @@ upset(
                                         "Pasture Hay", "Woody Wetlands")) +
         theme_minimal() +
         theme(
-          axis.title.x = element_blank(),
+          axis.title = element_blank(),
           axis.text.x = element_blank(),
         )
     )
@@ -221,7 +259,7 @@ upset(
         scale_fill_viridis_d(name = "Region", option = "turbo") +
         theme_minimal() +
         theme(
-          axis.title.x = element_blank(),
+          axis.title = element_blank(),
           axis.text.x = element_blank(),
         )
     )
