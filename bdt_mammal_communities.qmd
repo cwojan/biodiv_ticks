@@ -49,17 +49,22 @@ mammal_trap_df <- bind_rows(mammal_trap_data) %>%
   mutate(trap_status_code = str_sub(string = trap_status, start = 1, end = 1),
          trapping_date = as.Date(collect_date),
          year = year(trapping_date),
+         month = month(trapping_date),
          yday = yday(trapping_date))
 
 ## then we will identify trapping sessions for each plot using the difference of days among trapping nights
-trapping_sessions <- select(mammal_trap_df, plot_id, trapping_date) %>%
+trapping_sessions <- select(mammal_trap_df, plot_id, trapping_date, yday, month) %>%
   distinct() %>%
   arrange(plot_id, trapping_date) %>%
   group_by(plot_id) %>%
   mutate(plot_date = str_c(plot_id, "_", trapping_date),
          date_diff = c(0, diff(trapping_date)),
          session = cumsum(date_diff > 10),
-         plot_session = str_c(plot_id, "_", session))
+         plot_session = str_c(plot_id, "_", session)) %>%
+  group_by(plot_session) %>%
+  mutate(mean_yday = mean(yday),
+         mean_month = round(mean(month))) %>%
+  select(-month, - yday)
 
 ## and then the session data can be joined into the main data frame
 mammal_trap_df <- left_join(mammal_trap_df, trapping_sessions, by = c("plot_id", "trapping_date"))
@@ -132,7 +137,7 @@ mna_by_session <- left_join(mna_by_session, plot_land_cover, by = "plot_id")
 
 ## and we can add the year of each session
 session_years <- mammal_trap_df %>%
-  select(plot_session, year) %>%
+  select(plot_session, year, mean_month, mean_yday) %>%
   distinct()
 
 ## and join them in as well
@@ -181,7 +186,7 @@ species_by_session <- mna_by_session %>%
   filter(taxon_id %in% species_names$taxon_id) %>%
   mutate(presence = as.numeric(mna > 0),
          precise_richness = sum(presence)) %>%
-  select(site_id, plot_id, nlcd_class, plot_session, session, taxon_id, presence, precise_richness)
+  select(site_id, plot_id, nlcd_class, plot_session, session, year, mean_month, mean_yday, taxon_id, presence, precise_richness)
 
 ## create a data frame of just the precise_richness values by session
 precise_richness_by_session <- species_by_session %>%
@@ -635,7 +640,7 @@ Now let's try comparing observed community composition to simulated communities.
 
 ## create smaller proc_session data
 proc_session_data <- proc_sessions %>%
-  select(plot_session, plot_id, site_id, nlcd_class, year, taxon_id, mna,
+  select(plot_session, plot_id, site_id, nlcd_class, year, mean_month, mean_yday, taxon_id, mna,
          precise_richness, proc_richness, proc_total_mna) %>%
   distinct() %>%
   rename(session_id = plot_session,
