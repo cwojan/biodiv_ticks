@@ -87,7 +87,7 @@ tick_by_rich_preds <- mamm_tick_comm %>%
   nest() %>%
   mutate(model = map(data, ~ glm(ticks ~ richness, data = ., family = "binomial")),
          preds = map(model, ~ {
-           richness_seq <- seq(0, max(mna_by_session$richness), by = 1)
+           richness_seq <- seq(0, max(mamm_tick_comm$richness), by = 1)
            pred_df <- tibble(richness = richness_seq)
            pred_df$fit <- predict(.x, newdata = pred_df, type = "response")
            pred_df$coef <- summary(.x)$coefficients["richness", "Estimate"]
@@ -98,12 +98,12 @@ tick_by_rich_preds <- mamm_tick_comm %>%
   unnest(cols = c(preds)) %>%
   mutate(taxon_id = as.factor(taxon_id),
          taxon_id = fct_relevel(taxon_id, mamms),
-         significance = ifelse(pval < 0.05, "p < 0.05", "p >= 0.05"))
+         significance = if_else(pval < 0.05, "p < 0.05", "p >= 0.05"))
 
 ## visualize tick attachment by richness
 
 ggplot(tick_by_rich_preds, aes(x = richness, y = fit, color = taxon_id)) +
-  geom_line(aes(linetype = significance), size = 1) +
+  geom_line(aes(linetype = significance), linewidth = 1) +
   scale_color_manual(values = c("PELE" = "#E66101", "PEMA" = "#ccebc5", "BLBR" = "#a8ddb5",
                                 "MYGA" = "#7bccc4", "TAST" = "#43a2ca", "NAIN" = "#0868ac"),
                      labels = mamm_labels,
@@ -143,7 +143,7 @@ check <- ticks_on_pele %>%
   filter(n_mamms_w_ticks > 0, richness == 1)
 
 pele_richness_model <- glm(prop_pele_w_ticks ~ richness, data = ticks_on_pele %>% filter(n_mamms_w_ticks > 0), 
-                           family = "binomial", weight = n_mamms_w_ticks)
+                           family = "binomial", weights = n_mamms_w_ticks)
 summary(pele_richness_model)
 str(pele_richness_model)
 pele_richness_preds <- tibble(
