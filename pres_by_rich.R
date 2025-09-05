@@ -54,7 +54,12 @@ mammal_session_df <- left_join(mammal_trap_df, trapping_sessions,
                                by = c("plot_id", "trapping_date")) %>%
   mutate(taxon_id = as.factor(taxon_id),
          plot_session = as.factor(plot_session)) %>%
-  filter(!str_detect(scientific_name, "sp."), taxon_id != "PELEPEMA")
+  filter(!str_detect(scientific_name, "sp."), taxon_id != "PELEPEMA",
+         !is.na(taxon_id)) # explicitly keeping only captures
+
+## save mammal session df for other scripts
+saveRDS(mammal_session_df, file = "processed_data/mammal_session_df.rds")
+
 
 ## now we can create a df with columns for session and taxon, with every possible combo
 taxon_by_session <- mammal_session_df %>%
@@ -187,6 +192,9 @@ mna_by_session_corrected <- mna_by_session %>%
   filter(taxon_id %in% species_pool) %>%
   ungroup() %>%
   select(-species_pool, -n_species)
+
+## save this corrected df for other scripts
+saveRDS(mna_by_session_corrected, file = "processed_data/mna_by_session_corrected.rds")
 
 
 logistic_obs_results <- mna_by_session_corrected %>%
