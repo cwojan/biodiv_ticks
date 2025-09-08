@@ -308,7 +308,7 @@ ggplot(logistic_sim_results, aes(x = species, color = species, fill = species)) 
                 width = 0.2,
                 linewidth = 1) +
   geom_point(data = logistic_obs_results,
-             aes(y = coef, shape = "Observed"), color = "black", size = 3) +
+             aes(y = coef, shape = "Observed"), color = "black", size = 4) +
   geom_hline(yintercept = 0, linetype = "dashed") +
   scale_shape_manual(name = "Type", values = c("Observed" = 21, "Simulated" = 16),
                      guide = guide_legend(override.aes = list(alpha = 1, fill = "grey"))) +
@@ -325,7 +325,11 @@ ggplot(logistic_sim_results, aes(x = species, color = species, fill = species)) 
   labs(y = "Logistic Regression Coefficient (Log Odds Ratio)", x = "Species") +
   theme_bw() +
   theme(legend.position = c(0.9,0.85),
-        legend.background = element_rect(fill = "white", color = "black"))
+        legend.background = element_rect(fill = "white", color = "black"),
+        axis.title = element_text(size = 24),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 16))
 
 # filt slopes
 ggplot(logistic_sim_results_filt, aes(x = species, color = species, fill = species)) +
@@ -364,7 +368,7 @@ ggplot(logistic_sim_results, aes(x = species, color = species, fill = species)) 
                 width = 0.2,
                 linewidth = 1) +
   geom_point(data = logistic_obs_results,
-             aes(y = prob_at_1 * 100, shape = "Observed"), color = "black", size = 3) +
+             aes(y = prob_at_1 * 100, shape = "Observed"), color = "black", size = 4) +
   scale_shape_manual(name = "Type", values = c("Observed" = 21, "Simulated" = 16),
                      guide = guide_legend(override.aes = list(alpha = 1, fill = "grey"))) +
   scale_alpha_manual(values = c(1, 0.1)) +
@@ -381,7 +385,11 @@ ggplot(logistic_sim_results, aes(x = species, color = species, fill = species)) 
   labs(y = "Presence Probability at Richness = 1", x = "Species") +
   theme_bw() +
   theme(legend.position = c(0.9,0.85),
-        legend.background = element_rect(fill = "white", color = "black"))
+        legend.background = element_rect(fill = "white", color = "black"),
+        axis.title = element_text(size = 24),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 16))
 
 # filt at 1
 ggplot(logistic_sim_results_filt, aes(x = species, color = species, fill = species)) +
@@ -472,7 +480,11 @@ ggplot() +
   theme_bw() +
   theme(legend.position = c(0.9,0.25),
         legend.key.spacing.y = unit(0.2, "cm"),
-        legend.background = element_rect(fill = "white", color = "black"))
+        legend.background = element_rect(fill = "white", color = "black"),
+        axis.title = element_text(size = 24),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 16))
 
 #filt preds
 ggplot() +

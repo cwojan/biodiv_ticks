@@ -71,7 +71,7 @@ mamm_labels <- c(
 )
 
 ggplot(tick_results, aes(x = taxon_id, y = predicted_value, color = taxon_id)) +
-  geom_point(size = 3) +
+  geom_point(size = 4) +
   geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci), width = 0.1) +
   scale_color_manual(values = c("PELE" = "#E66101", "PEMA" = "#008080", "BLBR" = "#008080",
                                 "MYGA" = "#008080", "TAST" = "#008080", "NAIN" = "#008080"),
@@ -80,8 +80,10 @@ ggplot(tick_results, aes(x = taxon_id, y = predicted_value, color = taxon_id)) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0,1)) +
   labs(x = "Species", y = "Proportion of Individuals\nwith Ticks Attached") +
   theme_bw() +
-  theme(axis.title = element_text(size = 14),
-        axis.text = element_text(size = 12))
+  theme(axis.title = element_text(size = 24),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 16))
 
 ggplot(tick_results_filt, aes(x = taxon_id, y = predicted_value, color = taxon_id)) +
   geom_point(size = 3) +
@@ -160,10 +162,10 @@ ggplot(tick_by_rich_preds, aes(x = richness, y = fit, color = taxon_id)) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0,1)) +
   labs(x = "Small Mammal Species Richness", y = "Predicted Probability of\nTick Attachment") +
   theme_bw() +
-  theme(axis.title = element_text(size = 14),
-        axis.text = element_text(size = 12),
-        legend.title = element_text(size = 14),
-        legend.text = element_text(size = 12),
+  theme(axis.title = element_text(size = 24),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 16),
         legend.position = "bottom",
         legend.key.spacing.y = unit(0.2, "cm"),
         legend.background = element_rect(fill = "white", color = "black"))
@@ -228,17 +230,23 @@ pele_richness_obs_points <- ticks_on_pele %>%
   select(richness, prop_pele_w_ticks)
 summary(pele_richness_obs_points)
 
+reference_pele_preds <- tibble(
+  richness = seq(0, max(ticks_on_pele$richness), by = 1),
+  pred = 1 / richness
+ )
+
 
 ggplot(pele_richness_preds, aes(x = richness, y = fit)) +
   geom_point(data = pele_richness_obs_points, aes(x = richness, y = prop_pele_w_ticks), color = "#E66101", size = 1, alpha = 0.2) +
+  geom_line(data = reference_pele_preds, aes(x = richness, y = pred), color = "black", linetype = "dashed") +
   geom_line(color = "#E66101", size = 1) +
   geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci), alpha = 0.2, fill = "#E66101") +
   scale_x_continuous(breaks = seq(0, 10, by = 1), limits = c(1, max(ticks_on_pele$richness))) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0,1)) +
   labs(x = "Small Mammal Species Richness", y = "Predicted Percent of Mammals with\nTicks that are White-footed Mice") +
   theme_bw() +
-  theme(axis.title = element_text(size = 14),
-        axis.text = element_text(size = 12))
+  theme(axis.title = element_text(size = 24),
+        axis.text = element_text(size = 16))
 
 ###
 
