@@ -58,7 +58,7 @@ mammal_session_df <- left_join(mammal_trap_df, trapping_sessions,
          !is.na(taxon_id)) # explicitly keeping only captures
 
 ## save mammal session df for other scripts
-saveRDS(mammal_session_df, file = "processed_data/mammal_session_df.rds")
+#saveRDS(mammal_session_df, file = "processed_data/mammal_session_df.rds")
 
 
 ## now we can create a df with columns for session and taxon, with every possible combo
@@ -111,7 +111,7 @@ site_nlcd_species_pools <- site_nlcd_summary %>%
             .groups = "drop")
 
 ## average pool size
-ave_pool <- mean(site_nlcd_species_pool_sizes$n_species)
+ave_pool <- mean(site_nlcd_species_pools$n_species)
 
 ## create a function to randomly sample n species from the pool of species
 ## observed at a site and land cover class combination
@@ -132,7 +132,7 @@ sample_species <- function(plot, reps = 1000){
   ## get the observed richnesses for the plot's sessions
   session_richness <- mna_by_session %>%
     filter(plot_id == plot, richness > 0) %>%
-    select(session, richness) %>%
+    select(session, richness, mean_yday) %>%
     distinct() %>%
     arrange(session, richness)
   
@@ -145,10 +145,11 @@ sample_species <- function(plot, reps = 1000){
     uncount(weights = reps) %>%
     mutate(rep = rep(1:reps, times = nrow(session_richness) * length(species_pool))) %>%
     arrange(rep, session, species) %>%
-    left_join(sample_comms, by = c("rep", "session", "richness")) %>%
+    left_join(sample_comms, by = c("rep", "session", "richness", "mean_yday")) %>%
     group_by(rep, session) %>%
     mutate(presence = as.numeric(species %in% unlist(species_sample)),
-           plot_id = plot)
+           plot_id = plot,
+           nlcd = nlcd)
   
   return(out)
 }
@@ -184,6 +185,18 @@ logistic_sim_results <- simulated_comms_df %>%
   ) %>%
   select(species, rep, coef, intercept, type)
 
+logistic_sim_results_filt <- simulated_comms_df %>%
+  filter(species %in% mamms, !nlcd %in% c("pastureHay", "cultivatedCrops"), mean_yday >= 125) %>%
+  group_by(species, rep) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ glm(presence ~ richness, data = ., family = binomial)),
+    intercept = map_dbl(model, ~ coef(.x)[["(Intercept)"]]),
+    coef  = map_dbl(model, ~ coef(.x)[["richness"]]),
+    type = "sim"
+  ) %>%
+  select(species, rep, coef, intercept, type)
+
 ## now run the same logistic regression on the observed data
 # first correct mna_by_session to only include rows where the species is in the relevant species pool
 mna_by_session_corrected <- mna_by_session %>%
@@ -194,11 +207,24 @@ mna_by_session_corrected <- mna_by_session %>%
   select(-species_pool, -n_species)
 
 ## save this corrected df for other scripts
-saveRDS(mna_by_session_corrected, file = "processed_data/mna_by_session_corrected.rds")
+#saveRDS(mna_by_session_corrected, file = "processed_data/mna_by_session_corrected.rds")
 
 
 logistic_obs_results <- mna_by_session_corrected %>%
   filter(taxon_id %in% mamms) %>%
+  group_by(taxon_id) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ glm(presence ~ richness, data = ., family = binomial)),
+    intercept = map_dbl(model, ~ coef(.x)[["(Intercept)"]]),
+    coef  = map_dbl(model, ~ coef(.x)[["richness"]]),
+    type = "obs",
+    rep = "NA"
+  ) %>%
+  select(species = taxon_id, rep, coef, intercept, type)
+
+logistic_obs_results_filt <- mna_by_session_corrected %>%
+  filter(taxon_id %in% mamms, !nlcd_class %in% c("pastureHay", "cultivatedCrops"), mean_yday >= 125) %>%
   group_by(taxon_id) %>%
   nest() %>%
   mutate(
@@ -236,6 +262,32 @@ logistic_intervals <- logistic_sim_results %>%
   mutate(species = as.factor(species),
          species = fct_relevel(species, mamms))
 
+
+logistic_sim_results_filt <- logistic_sim_results_filt %>%
+  group_by(species) %>%
+  mutate(rep = as.character(rep),
+         prob_at_1 = plogis(intercept + coef * 1),
+         species = as.factor(species),
+         species = fct_relevel(species, mamms))
+logistic_obs_results_filt <- logistic_obs_results_filt %>%
+  group_by(species) %>%
+  mutate(prob_at_1 = plogis(intercept + coef * 1),
+         species = as.factor(species),
+         species = fct_relevel(species, mamms))
+logistic_results_filt <- bind_rows(logistic_sim_results_filt, logistic_obs_results_filt) %>%
+  mutate(species = as.factor(species),
+         species = fct_relevel(species, mamms))
+
+logistic_intervals_filt <- logistic_sim_results_filt %>%
+  group_by(species) %>%
+  summarize(lower_coef = quantile(coef, probs = 0.025),
+            upper_coef = quantile(coef, probs = 0.975),
+            lower_prob = quantile(prob_at_1, probs = 0.025),
+            upper_prob = quantile(prob_at_1, probs = 0.975),
+            .groups = "drop") %>%
+  mutate(species = as.factor(species),
+         species = fct_relevel(species, mamms))
+
 ## visualize the results
 
 mamm_labels <- c(
@@ -247,6 +299,7 @@ mamm_labels <- c(
   NAIN = "W. Jumping\nMouse"
 )
 
+# unfilt slopes
 ggplot(logistic_sim_results, aes(x = species, color = species, fill = species)) +
   geom_jitter(aes(y = coef, shape = "Simulated"), alpha = 0.05,
               width = 0.1) +
@@ -268,12 +321,41 @@ ggplot(logistic_sim_results, aes(x = species, color = species, fill = species)) 
                                 "MYGA" = "#008080", "TAST" = "#008080", "NAIN" = "#008080"),
                     guide = "none") +
   scale_x_discrete(labels = mamm_labels) +
-  scale_y_continuous(limits = c(-0.1, max(logistic_results$coef))) +
+  scale_y_continuous(limits = c(-0.1, 1.4)) +
   labs(y = "Logistic Regression Coefficient (Log Odds Ratio)", x = "Species") +
   theme_bw() +
   theme(legend.position = c(0.9,0.85),
         legend.background = element_rect(fill = "white", color = "black"))
 
+# filt slopes
+ggplot(logistic_sim_results_filt, aes(x = species, color = species, fill = species)) +
+  geom_jitter(aes(y = coef, shape = "Simulated"), alpha = 0.05,
+              width = 0.1) +
+  geom_errorbar(data = logistic_intervals_filt, 
+                aes(ymin = lower_coef, ymax = upper_coef),
+                width = 0.2,
+                linewidth = 1) +
+  geom_point(data = logistic_obs_results_filt,
+             aes(y = coef, shape = "Observed"), color = "black", size = 3) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_shape_manual(name = "Type", values = c("Observed" = 21, "Simulated" = 16),
+                     guide = guide_legend(override.aes = list(alpha = 1, fill = "grey"))) +
+  scale_alpha_manual(values = c(1, 0.1)) +
+  scale_size_manual(values = c(2, 0.5), guide = "none") +
+  scale_color_manual(values = c("PELE" = "#E66101", "PEMA" = "#008080", "BLBR" = "#008080",
+                                "MYGA" = "#008080", "TAST" = "#008080", "NAIN" = "#008080"),
+                     guide = "none") +
+  scale_fill_manual(values = c("PELE" = "#E66101", "PEMA" = "#008080", "BLBR" = "#008080",
+                               "MYGA" = "#008080", "TAST" = "#008080", "NAIN" = "#008080"),
+                    guide = "none") +
+  scale_x_discrete(labels = mamm_labels) +
+  scale_y_continuous(limits = c(-0.1, 1.4)) +
+  labs(y = "Logistic Regression Coefficient (Log Odds Ratio)", x = "Species") +
+  theme_bw() +
+  theme(legend.position = c(0.9,0.85),
+        legend.background = element_rect(fill = "white", color = "black"))
+
+# unfilt at 1
 ggplot(logistic_sim_results, aes(x = species, color = species, fill = species)) +
   geom_jitter(aes(y = prob_at_1 * 100, shape = "Simulated"), alpha = 0.05,
               width = 0.1) +
@@ -282,6 +364,34 @@ ggplot(logistic_sim_results, aes(x = species, color = species, fill = species)) 
                 width = 0.2,
                 linewidth = 1) +
   geom_point(data = logistic_obs_results,
+             aes(y = prob_at_1 * 100, shape = "Observed"), color = "black", size = 3) +
+  scale_shape_manual(name = "Type", values = c("Observed" = 21, "Simulated" = 16),
+                     guide = guide_legend(override.aes = list(alpha = 1, fill = "grey"))) +
+  scale_alpha_manual(values = c(1, 0.1)) +
+  scale_size_manual(values = c(2, 0.5), guide = "none") +
+  scale_color_manual(values = c("PELE" = "#E66101", "PEMA" = "#008080", "BLBR" = "#008080",
+                                "MYGA" = "#008080", "TAST" = "#008080", "NAIN" = "#008080"),
+                     guide = "none") +
+  scale_fill_manual(values = c("PELE" = "#E66101", "PEMA" = "#008080", "BLBR" = "#008080",
+                               "MYGA" = "#008080", "TAST" = "#008080", "NAIN" = "#008080"),
+                    guide = "none") +
+  scale_x_discrete(labels = mamm_labels) +
+  scale_y_continuous(labels = scales::percent_format(scale = 1),
+                     limits = c(0, 100)) +
+  labs(y = "Presence Probability at Richness = 1", x = "Species") +
+  theme_bw() +
+  theme(legend.position = c(0.9,0.85),
+        legend.background = element_rect(fill = "white", color = "black"))
+
+# filt at 1
+ggplot(logistic_sim_results_filt, aes(x = species, color = species, fill = species)) +
+  geom_jitter(aes(y = prob_at_1 * 100, shape = "Simulated"), alpha = 0.05,
+              width = 0.1) +
+  geom_errorbar(data = logistic_intervals_filt, 
+                aes(ymin = lower_prob * 100, ymax = upper_prob * 100),
+                width = 0.2,
+                linewidth = 1) +
+  geom_point(data = logistic_obs_results_filt,
              aes(y = prob_at_1 * 100, shape = "Observed"), color = "black", size = 3) +
   scale_shape_manual(name = "Type", values = c("Observed" = 21, "Simulated" = 16),
                      guide = guide_legend(override.aes = list(alpha = 1, fill = "grey"))) +
@@ -322,14 +432,53 @@ logistic_obs_preds <- mna_by_session_corrected %>%
          species = fct_relevel(species, mamms))
 
 
+logistic_obs_preds_filt <- mna_by_session_corrected %>%
+  filter(taxon_id %in% mamms, !nlcd_class %in% c("pastureHay", "cultivatedCrops"), mean_yday >= 125) %>%
+  group_by(taxon_id) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ glm(presence ~ richness, data = ., family = binomial)),
+    ## save fitted values with corresponding richness values
+    preds = map(model, ~ {
+      richness_seq <- seq(0, max(mna_by_session$richness), by = 1)
+      pred_df <- tibble(richness = richness_seq)
+      pred_df$fit <- predict(.x, newdata = pred_df, type = "response")
+      return(pred_df)
+    })
+  ) %>%
+  select(species = taxon_id, preds) %>%
+  unnest(cols = c(preds)) %>%
+  mutate(species = as.factor(species),
+         species = fct_relevel(species, mamms))
+
 
 reference_preds <- tibble(richness = seq(0, max(mna_by_session$richness), by = 1)) %>%
   mutate(fit = richness / ave_pool)
 
+#unfilt preds
 ggplot() +
   geom_line(data = reference_preds,
-            aes(x = richness, y = fit * 100), color = "black", linetype = "dashed", size = 1) +
+            aes(x = richness, y = fit * 100), color = "black", linetype = "dashed", linewidth = 1) +
   geom_line(data = logistic_obs_preds,
+            aes(x = richness, y = fit * 100, color = species), size = 1) +
+  scale_color_manual(values = c("PELE" = "#E66101", "PEMA" = "#ccebc5", "BLBR" = "#a8ddb5",
+                                "MYGA" = "#7bccc4", "TAST" = "#43a2ca", "NAIN" = "#0868ac"),
+                     labels = mamm_labels,
+                     name = "Species") +
+  scale_x_continuous(breaks = seq(0, max(mna_by_session$richness), by = 1)) +
+  scale_y_continuous(labels = scales::percent_format(scale = 1),
+                     limits = c(0, 100)) +
+  labs(y = "Predicted Presence Probability", x = "Species Richness") +
+  theme_bw() +
+  theme(legend.position = c(0.9,0.25),
+        legend.key.spacing.y = unit(0.2, "cm"),
+        legend.background = element_rect(fill = "white", color = "black"))
+
+#filt preds
+ggplot() +
+  geom_line(data = reference_preds,
+            aes(x = richness, y = fit * 100), color = "black", linetype = "dashed", linewidth = 1) +
+  geom_line(data = logistic_obs_preds_filt,
             aes(x = richness, y = fit * 100, color = species), size = 1) +
   scale_color_manual(values = c("PELE" = "#E66101", "PEMA" = "#ccebc5", "BLBR" = "#a8ddb5",
                                 "MYGA" = "#7bccc4", "TAST" = "#43a2ca", "NAIN" = "#0868ac"),
