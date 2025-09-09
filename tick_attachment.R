@@ -235,8 +235,6 @@ tick_pref_obs <- mamm_tick_pref %>%
          taxon_id = fct_relevel(taxon_id, mamms))
 
 ggplot(tick_pref_summary, aes(x = taxon_id, y = mean_tick_pref, fill = taxon_id)) +
-  #geom_jitter(data = tick_pref_obs, aes(x = taxon_id, y = tick_pref, color = taxon_id), 
-  #            size = 1, alpha = 0.2, width = 0.1) +
   geom_hline(yintercept = 1, linetype = "dashed", color = "black") +
   geom_errorbar(aes(ymin = lower, ymax = upper, color = taxon_id), width = 0.1) +
   geom_point(size = 4, shape = 21, color = "black") +
