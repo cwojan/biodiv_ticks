@@ -203,16 +203,19 @@ mna_check <- mamm_tick_comm %>%
 ## many mismatches, so make a new total mna column based on mammal ticks data
 mamm_tick_pref <- mamm_tick_comm %>%
   group_by(plot_session) %>%
-  mutate(total_tick_mna = n()) %>%
+  mutate(total_tick_mna = n(),
+         total_w_ticks = sum(ticks),) %>%
   group_by(plot_session, taxon_id) %>%
   mutate(mna_tick = n(),
          prop_mna_tick = mna_tick / total_tick_mna,
          n_w_ticks = sum(ticks == 1),
-         total_w_ticks = sum(ticks),
          prop_w_ticks = n_w_ticks / total_w_ticks,
          tick_pref = prop_w_ticks / prop_mna_tick) %>%
   filter(total_w_ticks > 0) %>%
   ungroup()
+
+check <- mamm_tick_pref %>%
+  filter(plot_session == "BART_015_23")
 
 tick_pref_summary <- mamm_tick_pref %>%
   group_by(taxon_id) %>%
@@ -224,15 +227,27 @@ tick_pref_summary <- mamm_tick_pref %>%
   mutate(taxon_id = as.factor(taxon_id),
          taxon_id = fct_relevel(taxon_id, mamms))
 
-ggplot(tick_pref_summary, aes(x = taxon_id, y = mean_tick_pref, color = taxon_id)) +
-  geom_point(size = 4) +
-  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.1) +
+tick_pref_obs <- mamm_tick_pref %>%
+  group_by(plot_session, taxon_id) %>%
+  summarize(tick_pref = first(tick_pref),
+            .groups = "drop") %>%
+  mutate(taxon_id = as.factor(taxon_id),
+         taxon_id = fct_relevel(taxon_id, mamms))
+
+ggplot(tick_pref_summary, aes(x = taxon_id, y = mean_tick_pref, fill = taxon_id)) +
+  #geom_jitter(data = tick_pref_obs, aes(x = taxon_id, y = tick_pref, color = taxon_id), 
+  #            size = 1, alpha = 0.2, width = 0.1) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "black") +
+  geom_errorbar(aes(ymin = lower, ymax = upper, color = taxon_id), width = 0.1) +
+  geom_point(size = 4, shape = 21, color = "black") +
   scale_color_manual(values = c("PELE" = "#E66101", "PEMA" = "#008080", "BLBR" = "#008080",
                                 "MYGA" = "#008080", "TAST" = "#008080", "NAIN" = "#008080"),
                      guide = "none") +
+  scale_fill_manual(values = c("PELE" = "#E66101", "PEMA" = "#008080", "BLBR" = "#008080",
+                                "MYGA" = "#008080", "TAST" = "#008080", "NAIN" = "#008080"),
+                     guide = "none") +
   scale_x_discrete(labels = mamm_labels) +
-  scale_y_continuous(limits = c(0, max(tick_pref_summary$upper)), breaks = seq(0, max(tick_pref_summary$upper), by = 1)) +
-  labs(x = "Species", y = "Mean Tick Preference Index") +
+  labs(x = "Species", y = "Tick Preference Index") +
   theme_bw() +
   theme(axis.title = element_text(size = 24),
         axis.text = element_text(size = 16))
