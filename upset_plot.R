@@ -81,6 +81,87 @@ query_list[[1]]
 summary(mamm_wide$NAIN)
 summary(c(1,2,3,NA))
 
+## simpler plots
+
+mamm_sum_sp <- mammals %>%
+  filter(taxon_id %in% c("PELE", "PEMA", "BLBR", "MYGA", "TAST", "NAIN")) %>%
+  group_by(plot_session) %>%
+  mutate(pele_presence = if_else(sum(presence[taxon_id == "PELE"]) > 0, 1, 0)) %>%
+  ungroup() %>%
+  group_by(taxon_id, pele_presence) %>%
+  summarise(sum = sum(presence)) %>%
+  mutate(taxon_id = factor(taxon_id, levels = c("PELE", "PEMA", "BLBR", "MYGA", "TAST", "NAIN")),
+         pele_presence = factor(pele_presence, levels = c(0,1), labels = c("Absent", "Present")))
+
+ggplot(mamm_sum_sp, aes(x = taxon_id, y = sum)) +
+  geom_bar(stat = "identity", aes(fill = pele_presence), width = 0.7) +
+  labs(x = "Species", y = "Frequency of Presence") +
+  scale_x_discrete(labels = mamm_labels) +
+  scale_fill_manual(values = c("#008080", "#E66101"),
+                    name = "White-footed Mouse\nPresence",
+                    labels = c("Absent", "Present")) +
+  theme_bw() +
+  theme(
+    axis.title = element_text(size = 24),
+    axis.text = element_text(size = 18),
+    legend.position = c(0.8, 0.8),
+    legend.title = element_text(size = 18),
+    legend.text = element_text(size = 16),
+    legend.background = element_rect(fill = "white", color = "black"),
+  )
+  
+
+
+upset(
+  data = mamm_wide, intersect = c("PEMA", "PELE", "MYGA", "BLBR", "TAST", "NAIN"),
+  name = "Active Community Composition (by trap session)",
+  base_annotations = list(),
+  set_sizes = FALSE,
+  labeller = as_labeller(mamm_labels),
+  queries = query_list,
+) +
+  theme(
+    text = element_text(size = 24),
+    axis.text.y = element_text(size = 16)
+  )
+
+upset(
+  data = mamm_wide, intersect = c("PEMA", "PELE", "MYGA", "BLBR", "TAST", "NAIN"),
+  name = "Active Community Composition (by trap session)",
+  height_ratio = 1,
+  base_annotations = list(
+    "Intersection size" = intersection_size(counts = FALSE,
+                                            mapping = aes(fill = pele_pres)) +
+      labs(y = "Frequency") +
+      scale_fill_manual(values = c("#008080", "#E66101"),
+                        name = "White-footed Mouse\nPresence",
+                        labels = c("Absent", "Present"))
+  ),
+  set_sizes = FALSE,
+  labeller = as_labeller(mamm_labels),
+  themes = upset_modify_themes(
+    list(
+      "Intersection size" = theme(
+        axis.title.y = element_text(size = 16),
+        legend.title = element_text(size = 18),
+        legend.text = element_text(size = 16),
+        legend.position = c(0.8,0.5),
+        legend.background = element_rect(fill = "white", color = "black")
+      ),
+      "overall_sizes" = theme(
+        axis.title = element_blank(),
+        legend.position = "none"
+      )
+    )
+  ),
+  queries = query_list,
+) +
+  theme(
+    axis.text.y = element_text(size = 16),
+    title = element_text(size = 24)
+  )
+
+
 # create upset plots
 
 upset(

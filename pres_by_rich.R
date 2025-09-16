@@ -218,10 +218,24 @@ logistic_obs_results <- mna_by_session_corrected %>%
     model = map(data, ~ glm(presence ~ richness, data = ., family = binomial)),
     intercept = map_dbl(model, ~ coef(.x)[["(Intercept)"]]),
     coef  = map_dbl(model, ~ coef(.x)[["richness"]]),
+    upper_coef = map_dbl(model, ~ confint(.x, "richness", level = 0.95)[2]),
+    lower_coef = map_dbl(model, ~ confint(.x, "richness", level = 0.95)[1]),
+    prob_at_1_link = map_dbl(model, ~predict(.x, newdata = data.frame(richness = 1), type = "link", se.fit = TRUE)$fit),
+    se_link = map_dbl(model, ~predict(.x, newdata = data.frame(richness = 1), type = "link", se.fit = TRUE)$se.fit),
+    prob_at_1 = plogis(prob_at_1_link),
+    lower_prob = plogis(prob_at_1_link - 1.96 * se_link),
+    upper_prob = plogis(prob_at_1_link + 1.96 * se_link),
     type = "obs",
     rep = "NA"
   ) %>%
-  select(species = taxon_id, rep, coef, intercept, type)
+  select(species = taxon_id, rep, coef, intercept, type, lower_coef, upper_coef, prob_at_1, lower_prob, upper_prob)
+
+# to get predicted probabilities at richness = 1
+predict(logistic_obs_results$model[[1]], newdata = data.frame(richness = 1), type = "link", se.fit = TRUE)
+# conf int of predicted probabilities at richness = 1
+plogis(predict(logistic_obs_results$model[[1]], newdata = data.frame(richness = 1), type = "link", se.fit = TRUE)$fit - 
+         1.96 * predict(logistic_obs_results$model[[1]], newdata = data.frame(richness = 1), type = "link", se.fit = TRUE)$se.fit)
+
 
 logistic_obs_results_filt <- mna_by_session_corrected %>%
   filter(taxon_id %in% mamms, !nlcd_class %in% c("pastureHay", "cultivatedCrops"), mean_yday >= 125) %>%
@@ -245,8 +259,7 @@ logistic_sim_results <- logistic_sim_results %>%
          species = fct_relevel(species, mamms))
 logistic_obs_results <- logistic_obs_results %>%
   group_by(species) %>%
-  mutate(prob_at_1 = plogis(intercept + coef * 1),
-         species = as.factor(species),
+  mutate(species = as.factor(species),
          species = fct_relevel(species, mamms))
 logistic_results <- bind_rows(logistic_sim_results, logistic_obs_results) %>%
   mutate(species = as.factor(species),
@@ -305,6 +318,16 @@ ggplot(logistic_sim_results, aes(x = species, color = species, fill = species)) 
               width = 0.1) +
   geom_errorbar(data = logistic_intervals, 
                 aes(ymin = lower_coef, ymax = upper_coef),
+                width = 0.15,
+                linewidth = 1,
+                alpha = 0.7) +
+  geom_errorbar(data = logistic_obs_results, 
+                aes(ymin = lower_coef, ymax = upper_coef),
+                width = 0.2,
+                color = "black",
+                linewidth = 1.5) +
+  geom_errorbar(data = logistic_obs_results, 
+                aes(ymin = lower_coef, ymax = upper_coef),
                 width = 0.2,
                 linewidth = 1) +
   geom_point(data = logistic_obs_results,
@@ -322,7 +345,7 @@ ggplot(logistic_sim_results, aes(x = species, color = species, fill = species)) 
                     guide = "none") +
   scale_x_discrete(labels = mamm_labels) +
   scale_y_continuous(limits = c(-0.1, 1.4)) +
-  labs(y = "Logistic Regression Coefficient (Log Odds Ratio)", x = "Species") +
+  labs(y = "Logistic Regression Coefficient\n(Log Odds Ratio)", x = "Species") +
   theme_bw() +
   theme(legend.position = c(0.9,0.85),
         legend.background = element_rect(fill = "white", color = "black"),
@@ -364,6 +387,15 @@ ggplot(logistic_sim_results, aes(x = species, color = species, fill = species)) 
   geom_jitter(aes(y = prob_at_1 * 100, shape = "Simulated"), alpha = 0.05,
               width = 0.1) +
   geom_errorbar(data = logistic_intervals, 
+                aes(ymin = lower_prob * 100, ymax = upper_prob * 100),
+                width = 0.2,
+                linewidth = 1) +
+  geom_errorbar(data = logistic_obs_results, 
+                aes(ymin = lower_prob * 100 , ymax = upper_prob * 100),
+                width = 0.2,
+                color = "black",
+                linewidth = 1.5) +
+  geom_errorbar(data = logistic_obs_results, 
                 aes(ymin = lower_prob * 100, ymax = upper_prob * 100),
                 width = 0.2,
                 linewidth = 1) +
