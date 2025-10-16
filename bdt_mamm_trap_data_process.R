@@ -73,8 +73,7 @@ mammal_session_df <- left_join(mammal_trap_df, trapping_sessions,
 current_date <- Sys.Date()
 
 ## save rds of full session data
-saveRDS(mammal_session_df, file = str_c("processed_data/mammal_session_df_", current_date, ".rds", sep = ""))
-
+write_rds(mammal_session_df, file = str_c("processed_data/mammal_session_df_", current_date, ".rds", sep = ""))
 
 ## now set up for richness and mna calculations
 
@@ -130,7 +129,8 @@ session_community_df <- session_mna_all %>%
          prop_mna =  mna / total_mna)
 
 ## save that community data
-saveRDS(session_community_df, file = str_c("processed_data/mammal_community_df_", current_date, ".rds", sep = ""))
+write_rds(session_community_df, file = str_c("processed_data/mammal_community_df_", current_date, ".rds", sep = ""))
+
 
 ## now filter down a ticks data frame
 
@@ -158,5 +158,4 @@ tick_captures_df <- mammal_session_df %>%
             .groups = "drop")
 
 ## save that ticks data
-saveRDS(tick_captures_df, file = str_c("processed_data/mammal_tick_captures_df_", current_date, ".rds", sep = ""))
-
+write_rds(tick_captures_df, file = str_c("processed_data/mammal_tick_captures_df_", current_date, ".rds", sep = ""))
