@@ -73,10 +73,90 @@ mammal_session_df <- left_join(mammal_trap_df, trapping_sessions,
 current_date <- Sys.Date()
 
 ## save rds of full session data
-saveRDS(mammal_session_df, file = paste0("processed_data/mammal_session_df_", current_date, ".rds"))
+saveRDS(mammal_session_df, file = str_c("processed_data/mammal_session_df_", current_date, ".rds", sep = ""))
 
 
-## now filter down to only captures for another df
+## now set up for richness and mna calculations
 
+## save only actual species taxon_ids
+taxon_ids <- mammal_session_df %>%
+  filter(true_id == TRUE) %>%
+  distinct(taxon_id) %>%
+  pull()
 
+## create a df with columns for session and taxon, with every possible combo
+taxon_by_session <- mammal_session_df %>%
+  distinct(domain_id, plot_id, year, mean_month, mean_yday, plot_session, nlcd_class) %>%
+  # repeat each row by the number of unique taxa
+  slice(rep(1:n(), each = length(taxon_ids))) %>%
+  # add in taxon ids
+  mutate(taxon_id = rep(taxon_ids, times = n_distinct(mammal_session_df$plot_session)))
+
+## calculate mna for O tags (same individual can have two tags in a session)
+mna_o_tags <- mammal_session_df %>%
+  filter(true_id == TRUE, true_tag == FALSE, !is.na(taxon_id)) %>%
+  group_by(plot_session, plot_date, taxon_id) %>%
+  summarise(mna_o = n_distinct(tag_id),
+            .groups = "drop") %>%
+  group_by(plot_session, taxon_id) %>%
+  summarise(one_night_max = max(mna_o),
+            .groups = "drop")
+
+## join those maxes in
+session_mna_o <- left_join(taxon_by_session, mna_o_tags,
+                               by = c("plot_session", "taxon_id"))
+
+## now calculate mna for true tag ids (one tag per individual)
+mna_true_tags <-  mammal_session_df %>%
+  filter(!is.na(tag_id), true_id == TRUE, true_tag == TRUE) %>% # true tagged captures
+  distinct(tag_id, plot_session, taxon_id) %>% # exclude recaptures
+  arrange(plot_session, taxon_id) %>%
+  group_by(plot_session, taxon_id) %>%
+  summarize(mna_over_session = n(), .groups = "drop")
+
+## join those mnas in
+session_mna_all <- left_join(session_mna_o, mna_true_tags,
+                                 by = c("plot_session", "taxon_id")) %>%
+  mutate(mna_over_session = replace_na(mna_over_session, 0),
+         one_night_max = replace_na(one_night_max, 0),
+         mna = pmax(mna_over_session, one_night_max, na.rm = TRUE))
+
+## now create df with richness and total mna per session
+session_community_df <- session_mna_all %>%
+  group_by(plot_session) %>%
+  mutate(presence = as.numeric(mna > 0), 
+         total_mna = sum(mna),
+         richness = sum(mna > 0),
+         prop_mna =  mna / total_mna)
+
+## save that community data
+saveRDS(session_community_df, file = str_c("processed_data/mammal_community_df_", current_date, ".rds", sep = ""))
+
+## now filter down a ticks data frame
+
+## only for species of interest
+mamms <- c("PELE", "PEMA", "BLBR", "MYGA", "TAST", "NAIN")
+
+## only true tick data (no unknowns), and summarize to "max" tick presence on any one night in a session
+tick_captures_df <- mammal_session_df %>%
+  filter(taxon_id %in% mamms) %>%
+  mutate(ticks = if_any(ends_with("ticks_attached"), ~ . == "Y"),
+         no_ticks = if_all(ends_with("ticks_attached"), ~ . == "N"),
+         unk_ticks = if_any(ends_with("ticks_attached"), ~ . == "U")) %>%
+  filter(!is.na(ticks), !is.na(no_ticks), !is.na(unk_ticks), unk_ticks == FALSE) %>%
+  mutate(ticks = as.numeric(ticks)) %>%
+  select(site_id, plot_id, nlcd_class, tag_id, taxon_id, year, mean_month, mean_yday, plot_session, ticks) %>%
+  group_by(plot_session, tag_id) %>%
+  summarize(site_id = first(site_id),
+            plot_id = first(plot_id),
+            nlcd_class = first(nlcd_class),
+            year = first(year),
+            mean_month = first(mean_month),
+            mean_yday = first(mean_yday),
+            taxon_id = first(taxon_id),
+            ticks = max(ticks),
+            .groups = "drop")
+
+## save that ticks data
+saveRDS(tick_captures_df, file = str_c("processed_data/mammal_tick_captures_df_", current_date, ".rds", sep = ""))
 
