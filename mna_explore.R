@@ -66,9 +66,16 @@ ggplot(mna_rich_sp, aes(x = richness, y = prop_mna, color = taxon_id)) +
   theme_bw()
 
 ## viz sp prop by total mna
-ggplot(mna_rich_sp, aes(x = total_mna, y = prop_mna, color = taxon_id)) +
+ggplot(mna_rich_sp, aes(x = total_mna, y = prop_mna, color = factor(richness))) +
   geom_point(alpha = 0.5) +
   labs(x = "Total MNA", y = "Prop", color = "Species") +
+  facet_wrap(~taxon_id) +
+  theme_bw()
+
+## viz sp prop by sp mna
+ggplot(mna_rich_sp, aes(x = mna, y = prop_mna, color = taxon_id)) +
+  geom_point(alpha = 0.5) +
+  labs(x = "MNA", y = "Prop", color = "Species") +
   facet_wrap(~taxon_id) +
   theme_bw()
 
