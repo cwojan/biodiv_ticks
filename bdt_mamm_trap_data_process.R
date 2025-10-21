@@ -139,11 +139,11 @@ mamms <- c("PELE", "PEMA", "BLBR", "MYGA", "TAST", "NAIN")
 
 ## only true tick data (no unknowns), and summarize to "max" tick presence on any one night in a session
 tick_captures_df <- mammal_session_df %>%
-  filter(taxon_id %in% mamms) %>%
   mutate(ticks = if_any(ends_with("ticks_attached"), ~ . == "Y"),
          no_ticks = if_all(ends_with("ticks_attached"), ~ . == "N"),
          unk_ticks = if_any(ends_with("ticks_attached"), ~ . == "U")) %>%
-  filter(!is.na(ticks), !is.na(no_ticks), !is.na(unk_ticks), unk_ticks == FALSE) %>%
+  filter(!is.na(ticks), !is.na(no_ticks), !is.na(unk_ticks), unk_ticks == FALSE,
+         true_id == TRUE, true_tag == TRUE) %>%
   mutate(ticks = as.numeric(ticks)) %>%
   select(site_id, plot_id, nlcd_class, tag_id, taxon_id, year, mean_month, mean_yday, plot_session, ticks) %>%
   group_by(plot_session, tag_id) %>%
