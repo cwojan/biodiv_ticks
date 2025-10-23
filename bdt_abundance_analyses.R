@@ -28,6 +28,10 @@ species_prop_obs <- mammal_community_df %>%
     rich_coef = map_dbl(rich_mod, ~ coef(.)[2]),
     abund_coef = map_dbl(abund_mod, ~ coef(.)[2]),
     mna_coef = map_dbl(mna_mod, ~ coef(.)[2]),
+    rich_intercept_upper = map_dbl(rich_mod, ~ confint(.x, "(Intercept)", level = 0.95)[2]),
+    rich_intercept_lower = map_dbl(rich_mod, ~ confint(.x, "(Intercept)", level = 0.95)[1]),
+    rich_coef_upper = map_dbl(rich_mod, ~ confint(.x, "richness", level = 0.95)[2]),
+    rich_coef_lower = map_dbl(rich_mod, ~ confint(.x, "richness", level = 0.95)[1]),
     rich_preds = map(rich_mod, ~ {
       richness_seq <- seq(0, max(mammal_community_df$richness), by = 1)
       pred_df <- tibble(richness = richness_seq)
@@ -61,14 +65,53 @@ mna_preds_obs <- species_prop_obs %>%
   select(taxon_id, mna_preds) %>%
   unnest(cols = c(mna_preds))
 
+mamm_labels <- c(
+  PELE = "White-footed\nMouse",
+  PEMA = "Deer Mouse",
+  BLBR = "Short-tailed\nShrew",
+  MYGA = "Red-backed\nVole",
+  TAST = "Eastern\nChipmunk",
+  NAIN = "W. Jumping\nMouse"
+)
+
+## quick look at total mna versus richness
+mammal_community_summary <- mammal_community_df %>%
+  group_by(plot_session) %>%
+  summarize(
+    richness = unique(richness),
+    total_mna = unique(total_mna),
+    .groups = "drop"
+  )
+
+ggplot(mammal_community_summary %>% filter(richness > 0), aes(x = richness, y = total_mna)) +
+  geom_jitter(width = 0.1, height = 0, alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "blue", linetype = "dashed") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted", color = "red") +
+  scale_x_continuous(breaks = seq(1, max(mammal_community_summary$richness), by = 1)) +
+  labs(x = "Species Richness", y = "Total # of Mammals") +
+  theme_bw() +
+  theme(axis.title = element_text(size = 24),
+        axis.text = element_text(size = 16))
+
 ## plot richness predictions by taxon
 ggplot(rich_preds_obs, aes(x = richness, y = fit, color = taxon_id)) +
   geom_line(linewidth = 1) +
   geom_line(aes(x = richness, y = 1/richness), linetype = "dashed", color = "black") +
+  scale_color_manual(values = c("PELE" = "#E66101", "PEMA" = "#ccebc5", "BLBR" = "#a8ddb5",
+                                "MYGA" = "#7bccc4", "TAST" = "#43a2ca", "NAIN" = "#0868ac"),
+                     labels = mamm_labels,
+                     name = "Species") +
   scale_x_continuous(breaks = seq(1, max(rich_preds_obs$richness), by = 1),
                      limits = c(1, max(rich_preds_obs$richness))) +
   labs(x = "Species Richness", y = "Predicted Proportion of Community") +
-  theme_bw()
+  theme_bw() + 
+  theme(legend.position = c(0.9,0.7),
+        legend.key.spacing.y = unit(0.2, "cm"),
+        legend.background = element_rect(fill = "white", color = "black"),
+        axis.title = element_text(size = 24),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 16))
 
 ## plot abundance predictions by taxon
 ggplot(abund_preds_obs, aes(x = total_mna, y = fit, color = taxon_id)) +
@@ -170,7 +213,7 @@ species_prop_sim <- sim_comms_join %>%
     abund_coef = map_dbl(abund_mod, ~ coef(.)[2]),
     mna_coef = map_dbl(mna_mod, ~ coef(.)[2])
   ) %>%
-  select(-data, -rich_mod, -abund_mod)
+  select(-data, -rich_mod, -abund_mod, -mna_mod)
 
 ## summarize simulation results
 species_prop_sim_summary <- species_prop_sim %>%
@@ -197,33 +240,96 @@ species_prop_sim_summary <- species_prop_sim %>%
     .groups = "drop"
   ) 
 
+## reorder taxon_id factor levels
+species_prop_obs <- species_prop_obs %>%
+  mutate(taxon_id = factor(taxon_id, levels = mamms))
+
+species_prop_sim <- species_prop_sim %>%
+  mutate(taxon_id = factor(taxon_id, levels = mamms))
+
+species_prop_sim_summary <- species_prop_sim_summary %>%
+  mutate(taxon_id = factor(taxon_id, levels = mamms))
+
 ## compare observed to simulated
-ggplot() +
-  geom_point(data = species_prop_obs, aes(x = taxon_id, y = rich_intercept), color = "red", size = 3) +
+ggplot(species_prop_sim, aes(x = taxon_id, color = taxon_id, fill = taxon_id)) +
+  geom_jitter(alpha = 0.05,
+             aes(y = rich_intercept, shape = "Simulated"),
+             width = 0.1) +
   geom_errorbar(data = species_prop_sim_summary, 
-                aes(x = taxon_id, 
-                    ymin = rich_intercept_lower, 
+                aes(ymin = rich_intercept_lower, 
                     ymax = rich_intercept_upper), 
-                width = 0.2) +
-  geom_point(data = species_prop_sim_summary, 
-             aes(x = taxon_id, y = rich_intercept_mean), 
-             color = "blue", size = 2) +
-  labs(x = "Taxon ID", y = "Richness Intercept") +
-  theme_bw()
+                width = 0.2, linewidth = 1) +
+  geom_errorbar(data = species_prop_obs, 
+                aes(ymin = rich_intercept_lower, 
+                    ymax = rich_intercept_upper), 
+                width = 0.2, linewidth = 1.5,
+                color = "black") +
+  geom_errorbar(data = species_prop_obs, 
+                aes(ymin = rich_intercept_lower, 
+                    ymax = rich_intercept_upper), 
+                width = 0.2, linewidth = 1) +
+  geom_point(data = species_prop_obs,
+             aes(y = rich_intercept, shape = "Observed"), color = "black", size = 4) +
+  labs(x = "Taxon ID", y = "Species Proportion ~ Richness \nBinomial Intercept") +
+  scale_shape_manual(name = "Type", values = c("Observed" = 21, "Simulated" = 16),
+                     guide = guide_legend(override.aes = list(alpha = 1, fill = "grey"))) +
+  scale_alpha_manual(values = c(1, 0.1)) +
+  scale_size_manual(values = c(2, 0.5), guide = "none") +
+  scale_color_manual(values = c("PELE" = "#E66101", "PEMA" = "#008080", "BLBR" = "#008080",
+                                "MYGA" = "#008080", "TAST" = "#008080", "NAIN" = "#008080"),
+                     guide = "none") +
+  scale_fill_manual(values = c("PELE" = "#E66101", "PEMA" = "#008080", "BLBR" = "#008080",
+                               "MYGA" = "#008080", "TAST" = "#008080", "NAIN" = "#008080"),
+                    guide = "none") +
+  scale_x_discrete(labels = mamm_labels) +
+  theme_bw() +
+  theme(legend.position = c(0.9,0.85),
+        legend.background = element_rect(fill = "white", color = "black"),
+        axis.title = element_text(size = 24),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 16))
 
 
-ggplot() +
-  geom_point(data = species_prop_obs, aes(x = taxon_id, y = rich_coef), color = "red", size = 3) +
+ggplot(species_prop_sim, aes(x = taxon_id, color = taxon_id, fill = taxon_id)) +
+  geom_jitter(alpha = 0.05,
+              aes(y = rich_coef, shape = "Simulated"),
+              width = 0.1) +
   geom_errorbar(data = species_prop_sim_summary, 
-                aes(x = taxon_id, 
-                    ymin = rich_coef_lower, 
+                aes(ymin = rich_coef_lower, 
                     ymax = rich_coef_upper), 
-                width = 0.2) +
-  geom_point(data = species_prop_sim_summary, 
-             aes(x = taxon_id, y = rich_coef_mean), 
-             color = "blue", size = 2) +
-  labs(x = "Taxon ID", y = "Richness Coefficient") +
-  theme_bw()
+                width = 0.2, linewidth = 1) +
+  geom_errorbar(data = species_prop_obs, 
+                aes(ymin = rich_coef_lower, 
+                    ymax = rich_coef_upper), 
+                width = 0.2, linewidth = 1.5,
+                color = "black") +
+  geom_errorbar(data = species_prop_obs, 
+                aes(ymin = rich_coef_lower, 
+                    ymax = rich_coef_upper), 
+                width = 0.2, linewidth = 1) +
+  geom_point(data = species_prop_obs,
+             aes(y = rich_coef, shape = "Observed"), color = "black", size = 4) +
+  labs(x = "Taxon ID", y = "Species Proportion ~ Richness \nBinomial Coefficient") +
+  scale_shape_manual(name = "Type", values = c("Observed" = 21, "Simulated" = 16),
+                     guide = guide_legend(override.aes = list(alpha = 1, fill = "grey"))) +
+  scale_alpha_manual(values = c(1, 0.1)) +
+  scale_size_manual(values = c(2, 0.5), guide = "none") +
+  scale_color_manual(values = c("PELE" = "#E66101", "PEMA" = "#008080", "BLBR" = "#008080",
+                                "MYGA" = "#008080", "TAST" = "#008080", "NAIN" = "#008080"),
+                     guide = "none") +
+  scale_fill_manual(values = c("PELE" = "#E66101", "PEMA" = "#008080", "BLBR" = "#008080",
+                               "MYGA" = "#008080", "TAST" = "#008080", "NAIN" = "#008080"),
+                    guide = "none") +
+  scale_x_discrete(labels = mamm_labels) +
+  theme_bw() +
+  theme(legend.position = c(0.9,0.85),
+        legend.background = element_rect(fill = "white", color = "black"),
+        axis.title = element_text(size = 24),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 16))
+
 
 ggplot() +
   geom_point(data = species_prop_obs, aes(x = taxon_id, y = abund_intercept), color = "red", size = 3) +
