@@ -132,7 +132,7 @@ sample_species <- function(plot, reps = 1000){
   ## get the observed richnesses for the plot's sessions
   session_richness <- mna_by_session %>%
     filter(plot_id == plot, richness > 0) %>%
-    select(session, richness, mean_yday) %>%
+    select(session, richness, mean_yday, mean_month) %>%
     distinct() %>%
     arrange(session, richness)
   
@@ -145,7 +145,7 @@ sample_species <- function(plot, reps = 1000){
     uncount(weights = reps) %>%
     mutate(rep = rep(1:reps, times = nrow(session_richness) * length(species_pool))) %>%
     arrange(rep, session, species) %>%
-    left_join(sample_comms, by = c("rep", "session", "richness", "mean_yday")) %>%
+    left_join(sample_comms, by = c("rep", "session", "richness", "mean_yday", "mean_month")) %>%
     group_by(rep, session) %>%
     mutate(presence = as.numeric(species %in% unlist(species_sample)),
            plot_id = plot,
@@ -186,7 +186,7 @@ logistic_sim_results <- simulated_comms_df %>%
   select(species, rep, coef, intercept, type)
 
 logistic_sim_results_filt <- simulated_comms_df %>%
-  filter(species %in% mamms, !nlcd %in% c("pastureHay", "cultivatedCrops"), mean_yday >= 125) %>%
+  filter(species %in% mamms, !nlcd %in% c("pastureHay", "cultivatedCrops"), mean_month > 4) %>%
   group_by(species, rep) %>%
   nest() %>%
   mutate(
@@ -238,7 +238,7 @@ plogis(predict(logistic_obs_results$model[[1]], newdata = data.frame(richness = 
 
 
 logistic_obs_results_filt <- mna_by_session_corrected %>%
-  filter(taxon_id %in% mamms, !nlcd_class %in% c("pastureHay", "cultivatedCrops"), mean_yday >= 125) %>%
+  filter(taxon_id %in% mamms, !nlcd_class %in% c("pastureHay", "cultivatedCrops"), mean_month > 4) %>%
   group_by(taxon_id) %>%
   nest() %>%
   mutate(

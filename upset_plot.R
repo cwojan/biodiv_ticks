@@ -8,13 +8,14 @@ library(ComplexUpset)
 library(DescTools)
 
 # Load the data
-data_date <- "2025-09-03"
-mammals <- read_csv(str_c("processed_data/mammal_community_effects_", data_date,".csv"))
+data_date <- "2025-10-16"
+mammals <- read_rds(str_c("processed_data/mammal_community_df_", data_date,".rds"))
 
 # select only site, mammal and presence columns
 mammals <- mammals %>%
-  select(site_id, plot_id, nlcd_class, plot_session, session,
-         taxon_id, year, mean_month, mean_yday, presence)
+  select(plot_id, nlcd_class, plot_session,
+         taxon_id, year, mean_month, mean_yday, presence, richness) %>%
+  mutate(site_id = str_sub(plot_id, 1,4))
 
 ## check most common mammals
 mamm_sum <- mammals %>%
@@ -24,6 +25,12 @@ mamm_sum <- mammals %>%
 
 mamm_filt <- mammals %>%
   filter(taxon_id %in% c("PELE", "PEMA", "BLBR", "MYGA", "TAST", "NAIN"))
+
+sessions <- mamm_filt %>%
+  distinct(plot_session, site_id, nlcd_class, year, mean_month, mean_yday, richness)
+
+developed_sessions <- sessions %>%
+  filter(nlcd_class %in% c("pastureHay", "cultivatedCrops"))
 
 # create a wide format data frame for the upset plot
 mamm_wide <- mamm_filt %>%
@@ -164,6 +171,7 @@ upset(
 
 # create upset plots
 
+## main plot
 upset(
   data = mamm_wide, intersect = c("PEMA", "PELE", "MYGA", "BLBR", "TAST", "NAIN"),
   name = "Community Composition (by trap session)",
@@ -200,6 +208,42 @@ upset(
     axis.text.y = element_text(size = 12)
   )
 
+## check pasture hay and cultivated crops
+upset(
+  data = mamm_wide %>% filter(nlcd_class %in% c("pastureHay", "cultivatedCrops")), intersect = c("PEMA", "PELE", "MYGA", "BLBR", "TAST", "NAIN"),
+  name = "Community Composition (by trap session)",
+  base_annotations = list(
+    "Intersection size" = intersection_size(counts = FALSE,
+                                            mapping = aes(fill = pele_pres)) +
+      scale_fill_manual(values = c("#008080", "#E66101"),
+                        name = "White-footed Mouse\nPresence",
+                        labels = c("Absent", "Present"))
+  ),
+  set_sizes = (
+    upset_set_size(geom = geom_bar(aes(fill = pele_pres))) +
+      scale_fill_manual(values = c("#008080", "#E66101"),
+                        name = "White-footed Mouse\nPresence",
+                        labels = c("Absent", "Present"))
+  ),
+  labeller = as_labeller(mamm_labels),
+  themes = upset_modify_themes(
+    list(
+      "Intersection size" = theme(
+        legend.position = c(-0.15,0.2),
+        axis.title = element_blank()
+      ),
+      "overall_sizes" = theme(
+        axis.title = element_blank(),
+        legend.position = "none"
+      )
+    )
+  ),
+  queries = query_list,
+) +
+  theme(
+    text = element_text(size = 16),
+    axis.text.y = element_text(size = 12)
+  )
 
 
 upset(
