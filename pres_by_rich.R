@@ -473,7 +473,7 @@ logistic_obs_preds <- mna_by_session_corrected %>%
 
 
 logistic_obs_preds_filt <- mna_by_session_corrected %>%
-  filter(taxon_id %in% mamms, !nlcd_class %in% c("pastureHay", "cultivatedCrops"), mean_yday >= 125) %>%
+  filter(taxon_id %in% mamms, !nlcd_class %in% c("pastureHay", "cultivatedCrops")) %>%
   group_by(taxon_id) %>%
   nest() %>%
   mutate(
