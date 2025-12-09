@@ -8,10 +8,15 @@ library(glmmTMB)
 
 ## read mammal community data
 mammal_community_df <- read_rds("processed_data/mammal_community_df_2025-10-16.rds") %>%
+  mutate(region = if_else(domain_id == "D05", "Upper Midwest", "Northeast")) %>%
+  group_by(region) %>%
+  mutate(max_richness = max(richness),
+         max_mna = max(total_mna)) %>%
   ungroup()
 
 ## read tick attachment data
-tick_attachment_df <- read_rds("processed_data/mammal_tick_captures_df_2025-10-21.rds")
+tick_attachment_df <- read_rds("processed_data/mammal_tick_captures_df_2025-10-21.rds") %>%
+  mutate(region = if_else(site_id %in% c("TREE", "STEI", "UNDE"), "Upper Midwest", "Northeast"))
 
 ## mammals of interest
 mamms <- c("PELE", "PEMA", "BLBR", "MYGA", "TAST", "NAIN")
@@ -34,7 +39,7 @@ tick_attach_summary <- tick_attachment_df %>%
 
 ## join in community variables 
 tick_attach_join <- tick_attach_summary %>%
-  left_join(mammal_community_df %>% select(plot_session, year, mean_month,
+  left_join(mammal_community_df %>% select(region, plot_session, year, mean_month,
                                            nlcd_class, taxon_id, mna, total_mna,
                                            richness, prop_mna), 
             by = c("plot_session", "taxon_id")) %>%
@@ -49,7 +54,7 @@ ggplot(tick_attach_join %>% filter(taxon_id == "PELE")) +
               aes(x = total_mna, y = num_w_ticks,)) +
   geom_smooth(method = "lm",
               aes(x = total_mna, y = num_w_ticks), color = "black") +
-  #facet_wrap(~site_id) +
+  facet_wrap(~region) +
   scale_color_viridis_c() +
   #scale_x_continuous(breaks = seq(0, 10, by = 1)) +
   theme_bw()
@@ -99,7 +104,7 @@ tick_attach_sims <- replicate(n = 1000, simplify = FALSE,
                                 group_by(plot_session) %>%
                                 mutate(ticks_shuffled = sample(ticks)) %>%
                                 ungroup() %>%
-                                group_by(plot_session, taxon_id) %>%
+                                group_by(region, plot_session, taxon_id) %>%
                                 summarize(
                                   num_w_ticks = sum(ticks_shuffled == 1),
                                   num_total = n(),
@@ -116,7 +121,7 @@ tick_attach_sims <- replicate(n = 1000, simplify = FALSE,
 
 ## calculate max and mins for each plot session and taxon
 tick_attach_sim_dists <- tick_attach_sims %>%
-  group_by(plot_session, taxon_id) %>%
+  group_by(region, plot_session, taxon_id) %>%
   summarize(
     upper_prop = quantile(prop_w_ticks, probs = 0.975),
     lower_prop = quantile(prop_w_ticks, probs = 0.025),
@@ -151,7 +156,7 @@ tick_attach_sim_join <- tick_attach_sim_dists %>%
 tick_attach_sim_perc <- tick_attach_sims %>%
   group_by(plot_session, taxon_id) %>%
   nest() %>%
-  left_join(mammal_community_df %>% select(plot_session, year, mean_month,
+  left_join(mammal_community_df %>% select(region, plot_session, year, mean_month,
                                            nlcd_class, taxon_id, mna, total_mna,
                                            richness, prop_mna), 
             by = c("plot_session", "taxon_id")) %>%
@@ -192,12 +197,9 @@ ggplot(tick_attach_sim_perc %>% filter(taxon_id %in% mamms, prop_sd > 0),
   geom_boxplot(alpha = 0.2, outlier.shape = NA) +
   geom_jitter(width = 0.2, height = 0, alpha = 0.5) +
   geom_hline(yintercept = 0, linetype = "dashed") +
-  scale_color_manual(values = c("PELE" = "#E66101", "PEMA" = "#008080", "BLBR" = "#008080",
-                                "MYGA" = "#008080", "TAST" = "#008080", "NAIN" = "#008080"),
-                     guide = "none") +
-  scale_fill_manual(values = c("PELE" = "#E66101", "PEMA" = "#008080", "BLBR" = "#008080",
-                               "MYGA" = "#008080", "TAST" = "#008080", "NAIN" = "#008080"),
-                    guide = "none") +
+  facet_grid(rows = vars(region)) +
+  scale_color_viridis_d(guide = "none") +
+  scale_fill_viridis_d(guide = "none") +
   scale_x_discrete(labels = mamm_labels) +
   labs(x = "Mammal Species", y = "Standardized Difference in Proportion \nw/ Ticks to Simulated Mean") +
   theme_bw() +
@@ -269,10 +271,10 @@ ggplot() +
                                 "Higher" = 1,
                                 "Lower" = 1)) +
   labs(x = "Mammal Species Richness", y = "Number of Mammals w/ Ticks") +
-  facet_wrap(~taxon_id, labeller = as_labeller(mamm_labels)) +
+  facet_grid(cols = vars(taxon_id), rows = vars(region), labeller = labeller(.cols = mamm_labels)) +
   scale_x_continuous(breaks = seq(0, 10, by = 1)) +
   theme_bw() +
-  theme(legend.position = c(0.85,0.25),
+  theme(legend.position = "bottom",
         legend.background = element_rect(fill = "white", color = "black"),
         strip.text = element_text(size = 20),
         axis.title = element_text(size = 24),

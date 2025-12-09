@@ -24,7 +24,8 @@ mamm_sum <- mammals %>%
   arrange(desc(sum))
 
 mamm_filt <- mammals %>%
-  filter(taxon_id %in% c("PELE", "PEMA", "BLBR", "MYGA", "TAST", "NAIN"))
+  filter(taxon_id %in% c("PELE", "PEMA", "BLBR", "MYGA", "TAST", "NAIN"),
+         !nlcd_class %in% c("pastureHay", "cultivatedCrops"))
 
 sessions <- mamm_filt %>%
   distinct(plot_session, site_id, nlcd_class, year, mean_month, mean_yday, richness)
