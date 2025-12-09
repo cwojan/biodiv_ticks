@@ -4,58 +4,78 @@
 
 ## loading packages
 library(tidyverse)
+library(future)
+library(furrr)
 
 
 ## read mammal community data
-mammal_community_df <- read_rds("processed_data/mammal_community_df_2025-10-16.rds")
+mammal_community_df <- read_rds("processed_data/mammal_community_df_2025-10-16.rds") %>%
+  mutate(region = if_else(domain_id == "D05", "Upper Midwest", "Northeast")) %>%
+  group_by(region) %>%
+  mutate(max_richness = max(richness),
+         max_mna = max(total_mna)) %>%
+  ungroup()
 
+mammal_single_species_df <- mammal_community_df %>%
+  filter(presence == 1, richness == 1)
 ## mammals of interest
 mamms <- c("PELE", "PEMA", "BLBR", "MYGA", "TAST", "NAIN")
+
+pele_community_df <- mammal_community_df %>%
+  filter(taxon_id == "PELE")
+
+pele_mod <- glm(prop_mna ~ I(1/richness), data = pele_community_df %>% filter(mna > 0),
+                weights = total_mna, family = "binomial")
+
+summary(pele_mod)
+pred_richness <- seq(1, max(pele_community_df$max_richness), by = 1)
+pred_df <- tibble(richness = pred_richness)
+pred_df$fit <- predict(pele_mod, newdata = pred_df, type = "response")
 
 ## for each species, what proportion of the community does it make up when it is present?
 ## binomial regression on richness and total_mna
 species_prop_obs <- mammal_community_df %>%
   filter(taxon_id %in% mamms, mna > 0) %>%
-  group_by(taxon_id) %>%
+  group_by(taxon_id, region, max_richness, max_mna) %>%
   nest() %>%
   mutate(
-    rich_mod = map(data, ~ glm(prop_mna ~ richness, data = ., weights = total_mna, family = "binomial")),
-    abund_mod = map(data, ~ glm(prop_mna ~ total_mna, data = ., weights = total_mna, family = "binomial")),
-    mna_mod = map(data, ~ MASS::glm.nb(mna ~ richness, data = .)),
-    rich_intercept = map_dbl(rich_mod, ~ coef(.)[1]),
-    abund_intercept = map_dbl(abund_mod, ~ coef(.)[1]),
-    mna_intercept = map_dbl(mna_mod, ~ coef(.)[1]),
-    rich_coef = map_dbl(rich_mod, ~ coef(.)[2]),
-    abund_coef = map_dbl(abund_mod, ~ coef(.)[2]),
-    mna_coef = map_dbl(mna_mod, ~ coef(.)[2]),
-    rich_intercept_upper = map_dbl(rich_mod, ~ confint(.x, "(Intercept)", level = 0.95)[2]),
-    rich_intercept_lower = map_dbl(rich_mod, ~ confint(.x, "(Intercept)", level = 0.95)[1]),
-    rich_coef_upper = map_dbl(rich_mod, ~ confint(.x, "richness", level = 0.95)[2]),
-    rich_coef_lower = map_dbl(rich_mod, ~ confint(.x, "richness", level = 0.95)[1]),
+    rich_mod = map(data, ~ glm(prop_mna ~ I(1/richness), data = ., weights = total_mna, family = "binomial")),
+    # abund_mod = map(data, ~ glm(prop_mna ~ total_mna, data = ., weights = total_mna, family = "binomial")),
+    # mna_mod = map(data, ~ MASS::glm.nb(mna ~ richness, data = .)),
+    # rich_intercept = map_dbl(rich_mod, ~ coef(.)[1]),
+    # abund_intercept = map_dbl(abund_mod, ~ coef(.)[1]),
+    # mna_intercept = map_dbl(mna_mod, ~ coef(.)[1]),
+    # rich_coef = map_dbl(rich_mod, ~ coef(.)[2]),
+    # abund_coef = map_dbl(abund_mod, ~ coef(.)[2]),
+    # mna_coef = map_dbl(mna_mod, ~ coef(.)[2]),
+    # rich_intercept_upper = map_dbl(rich_mod, ~ confint(.x, "(Intercept)", level = 0.95)[2]),
+    # rich_intercept_lower = map_dbl(rich_mod, ~ confint(.x, "(Intercept)", level = 0.95)[1]),
+    # rich_coef_upper = map_dbl(rich_mod, ~ confint(.x, "richness", level = 0.95)[2]),
+    # rich_coef_lower = map_dbl(rich_mod, ~ confint(.x, "richness", level = 0.95)[1]),
     rich_preds = map(rich_mod, ~ {
-      richness_seq <- seq(0, max(mammal_community_df$richness), by = 1)
+      richness_seq <- seq(0, max_richness, by = 1)
       pred_df <- tibble(richness = richness_seq)
       pred_df$fit <- predict(.x, newdata = pred_df, type = "response")
       return(pred_df)
     }),
-    abund_preds = map(abund_mod, ~ {
-      abund_seq <- seq(1, max(mammal_community_df$total_mna), by = 1)
-      pred_df <- tibble(total_mna = abund_seq)
-      pred_df$fit <- predict(.x, newdata = pred_df, type = "response")
-      return(pred_df)
-    }),
-    mna_preds = map(mna_mod, ~ {
-      richness_seq <- seq(0, max(mammal_community_df$richness), by = 1)
-      pred_df <- tibble(richness = richness_seq)
-      pred_df$fit <- predict(.x, newdata = pred_df, type = "response")
-      return(pred_df)
-    })
-  ) %>%
-  select(-data, -rich_mod, -abund_mod, -mna_mod)
+    # abund_preds = map(abund_mod, ~ {
+    #   abund_seq <- seq(1, max_mna, by = 1)
+    #   pred_df <- tibble(total_mna = abund_seq)
+    #   pred_df$fit <- predict(.x, newdata = pred_df, type = "response")
+    #   return(pred_df)
+    # }),
+    # mna_preds = map(mna_mod, ~ {
+    #   richness_seq <- seq(0, max_richness, by = 1)
+    #   pred_df <- tibble(richness = richness_seq)
+    #   pred_df$fit <- predict(.x, newdata = pred_df, type = "response")
+    #   return(pred_df)
+    # })
+  )
 
 rich_preds_obs <- species_prop_obs %>%
   select(taxon_id, rich_preds) %>%
-  unnest(cols = c(rich_preds))
+  unnest(cols = c(rich_preds)) %>%
+  mutate(taxon_id = factor(taxon_id, levels = mamms))
 
 abund_preds_obs <- species_prop_obs %>%
   select(taxon_id, abund_preds) %>%
@@ -76,7 +96,8 @@ mamm_labels <- c(
 
 ## quick look at total mna versus richness
 mammal_community_summary <- mammal_community_df %>%
-  group_by(plot_session) %>%
+  mutate(region = if_else(domain_id == "D05", "Upper Midwest", "Northeast")) %>%
+  group_by(region, plot_session) %>%
   summarize(
     richness = unique(richness),
     total_mna = unique(total_mna),
@@ -87,6 +108,7 @@ ggplot(mammal_community_summary %>% filter(richness > 0), aes(x = richness, y = 
   geom_jitter(width = 0.1, height = 0, alpha = 0.5) +
   geom_smooth(method = "lm", se = FALSE, color = "blue", linetype = "dashed") +
   geom_abline(slope = 1, intercept = 0, linetype = "dotted", color = "red") +
+  facet_wrap(~region) +
   scale_x_continuous(breaks = seq(1, max(mammal_community_summary$richness), by = 1)) +
   labs(x = "Species Richness", y = "Total # of Mammals") +
   theme_bw() +
@@ -95,7 +117,7 @@ ggplot(mammal_community_summary %>% filter(richness > 0), aes(x = richness, y = 
 
 ## plot richness predictions by taxon
 ggplot(rich_preds_obs, aes(x = richness, y = fit, color = taxon_id)) +
-  geom_line(linewidth = 1) +
+  geom_line(aes(group = interaction(region, taxon_id)), linewidth = 1) +
   geom_line(aes(x = richness, y = 1/richness), linetype = "dashed", color = "black") +
   scale_color_manual(values = c("PELE" = "#E66101", "PEMA" = "#ccebc5", "BLBR" = "#a8ddb5",
                                 "MYGA" = "#7bccc4", "TAST" = "#43a2ca", "NAIN" = "#0868ac"),
@@ -103,6 +125,7 @@ ggplot(rich_preds_obs, aes(x = richness, y = fit, color = taxon_id)) +
                      name = "Species") +
   scale_x_continuous(breaks = seq(1, max(rich_preds_obs$richness), by = 1),
                      limits = c(1, max(rich_preds_obs$richness))) +
+  facet_wrap(~region) +
   labs(x = "Species Richness", y = "Predicted Proportion of Community") +
   theme_bw() + 
   theme(legend.position = c(0.9,0.7),
@@ -115,14 +138,16 @@ ggplot(rich_preds_obs, aes(x = richness, y = fit, color = taxon_id)) +
 
 ## plot abundance predictions by taxon
 ggplot(abund_preds_obs, aes(x = total_mna, y = fit, color = taxon_id)) +
-  geom_line(linewidth = 1) +
+  geom_line(aes(group = interaction(region, taxon_id)), linewidth = 1) +
+  facet_wrap(~region) +
   scale_x_continuous(breaks = seq(0, max(abund_preds_obs$total_mna), by = 5)) +
   labs(x = "Total MNA", y = "Predicted Proportion of Community") +
   theme_bw()
 
 ## plot mna predictions by taxon
 ggplot(mna_preds_obs, aes(x = richness, y = fit, color = taxon_id)) +
-  geom_line(linewidth = 1) +
+  geom_line(aes(group = interaction(region, taxon_id)), linewidth = 1) +
+  facet_wrap(~region) +
   scale_x_continuous(breaks = seq(1, max(mna_preds_obs$richness), by = 1),
                      limits = c(1, max(mna_preds_obs$richness))) +
   labs(x = "Species Richness", y = "Predicted MNA per Species") +
@@ -133,7 +158,7 @@ ggplot(mna_preds_obs, aes(x = richness, y = fit, color = taxon_id)) +
 
 
 ## test in pieces
-session_id <- "TREE_028_10"
+session_id <- "BART_007_36"
 species_observed <- mammal_community_df %>%
   filter(plot_session == session_id,
          presence == 1) %>%
@@ -190,30 +215,73 @@ rm(sim_comms_list)
 
 sim_comms_join <- sim_comms_df %>%
   left_join(mammal_community_df %>%
-              select(plot_session, richness) %>%
+              select(plot_session, richness, region, max_richness, max_mna) %>%
               distinct(),
             by = c("session_id" = "plot_session")) %>%
   mutate(prop_mna = sim_mna / total_mna)
 
 summary(sim_comms_join %>% filter(taxon_id %in% mamms, rep == 1) %>% pull(taxon_id) %>% as.factor())
 
+## fit models to simulated data
+
 species_prop_sim <- sim_comms_join %>%
   filter(taxon_id %in% mamms) %>%
-  group_by(taxon_id, rep) %>%
+  group_by(taxon_id, rep, region, max_richness) %>%
   nest() %>%
   arrange(rep, taxon_id) %>%
   mutate(
-    rich_mod = map(data, ~ glm(prop_mna ~ richness, data = ., weights = total_mna, family = "binomial")),
-    abund_mod = map(data, ~ glm(prop_mna ~ total_mna, data = ., weights = total_mna, family = "binomial")),
-    mna_mod = map(data, ~ MASS::glm.nb(sim_mna ~ richness, data = .)),
-    rich_intercept = map_dbl(rich_mod, ~ coef(.)[1]),
-    abund_intercept = map_dbl(abund_mod, ~ coef(.)[1]),
-    mna_intercept = map_dbl(mna_mod, ~ coef(.)[1]),
-    rich_coef = map_dbl(rich_mod, ~ coef(.)[2]),
-    abund_coef = map_dbl(abund_mod, ~ coef(.)[2]),
-    mna_coef = map_dbl(mna_mod, ~ coef(.)[2])
+    rich_mod = future_map(data, ~ glm(prop_mna ~ richness, data = ., weights = total_mna, family = "binomial"),
+                          .progress = TRUE),
+    rich_preds = future_map(rich_mod, ~ {
+      richness_seq <- seq(0, max_richness, by = 1)
+      pred_df <- tibble(richness = richness_seq)
+      pred_df$fit <- predict(.x, newdata = pred_df, type = "response")
+      return(pred_df)
+    }, .progress = TRUE)
+  )
+
+
+## simulated richness preds
+rich_preds_sim <- species_prop_sim %>%
+  select(-data) %>%
+  unnest(cols = c(rich_preds)) %>%
+  group_by(taxon_id, region, richness) %>%
+  summarize(
+    mean_fit = mean(fit),
+    max = max(fit),
+    min = min(fit),
+    .groups = "drop"
   ) %>%
-  select(-data, -rich_mod, -abund_mod, -mna_mod)
+  mutate(taxon_id = factor(taxon_id, levels = mamms))
+
+## plot observed and simulated richness preds
+
+ggplot() +
+  geom_line(data = rich_preds_obs, linewidth = 1.5,
+            aes(x = richness, y = fit, color = taxon_id, linetype = "Observed")) +
+  geom_ribbon(data = rich_preds_sim,
+              aes(ymin = min, ymax = max, x = richness, fill = taxon_id, 
+                  color = taxon_id, linetype = "Simulated"), 
+              alpha = 0.25) +
+  geom_line(data = rich_preds_sim,
+            aes(x = richness, y = max, color = taxon_id, linetype = "Simulated"),
+            alpha = 0.5) +
+  facet_grid(rows = vars(region), cols = vars(taxon_id),
+             labeller = labeller(.cols = mamm_labels)) +
+  labs(x = "Species Richness", y = "Predicted Proportion of Community") +
+  scale_colour_viridis_d(guide = "none") +
+  scale_fill_viridis_d(guide = "none") +
+  scale_linetype_manual(name = "Data Type", values = c("solid", "dashed"), breaks = c("Observed", "Simulated")) +
+  scale_x_continuous(breaks = seq(1, max(rich_preds_obs$richness), by = 1),
+                     limits = c(1, max(rich_preds_obs$richness))) +
+  scale_y_continuous(limits = c(0, 1)) +
+  theme_bw() +
+  theme(axis.title = element_text(size = 24),
+        axis.text = element_text(size = 16),
+        strip.text = element_text(size = 18),
+        legend.title = element_text(size = 18),
+        legend.text = element_text(size = 14),
+        legend.position = "bottom")
 
 ## summarize simulation results
 species_prop_sim_summary <- species_prop_sim %>%

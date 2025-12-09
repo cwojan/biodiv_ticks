@@ -7,7 +7,12 @@ library(tidyverse)
 
 
 ## read mammal community data
-mammal_community_df <- read_rds("processed_data/mammal_community_df_2025-10-16.rds")
+mammal_community_df <- read_rds("processed_data/mammal_community_df_2025-10-16.rds") %>%
+  mutate(region = if_else(domain_id == "D05", "Upper Midwest", "Northeast")) %>%
+  group_by(region) %>%
+  mutate(max_richness = max(richness),
+         max_mna = max(total_mna)) %>%
+  ungroup()
 
 ## mammals of interest
 mamms <- c("PELE", "PEMA", "BLBR", "MYGA", "TAST", "NAIN")
@@ -51,7 +56,7 @@ sample_species <- function(plot, reps = 1000){
   ## get the observed richnesses for the plot's sessions
   session_richness <- mamms_presence_df %>%
     filter(plot_id == plot, richness > 0) %>%
-    select(domain_id, plot_session, richness, mean_yday, mean_month) %>%
+    select(region, domain_id, plot_session, richness, max_richness, mean_yday, mean_month) %>%
     distinct() %>%
     arrange(plot_session, richness)
   
@@ -64,7 +69,7 @@ sample_species <- function(plot, reps = 1000){
     uncount(weights = reps) %>%
     mutate(rep = rep(1:reps, times = nrow(session_richness) * length(species_pool))) %>%
     arrange(rep, taxon_id) %>%
-    left_join(sample_comms, by = c("domain_id", "rep", "plot_session", "richness", "mean_yday", "mean_month")) %>%
+    left_join(sample_comms, by = c("region", "domain_id", "rep", "plot_session", "richness", "max_richness", "mean_yday", "mean_month")) %>%
     group_by(rep, plot_session) %>%
     mutate(presence = as.numeric(taxon_id %in% unlist(species_sample)),
            plot_id = plot,
@@ -85,8 +90,7 @@ rm(simulated_comms)
 
 ## filter for mammals of interest
 simulated_mamms_df <- simulated_comms_df %>%
-  filter(taxon_id %in% mamms) %>%
-  mutate(region = if_else(domain_id == "D05", "Upper Midwest", "Northeast"))
+  filter(taxon_id %in% mamms)
 rm(simulated_comms_df)
 
 mamms_presence_filtered_df <- mamms_presence_df %>%
@@ -95,58 +99,76 @@ mamms_presence_filtered_df <- mamms_presence_df %>%
   rowwise() %>%
   filter(taxon_id %in% unlist(species_pool)) %>%
   ungroup() %>%
-  select(-species_pool, -n_species) %>%
-  mutate(region = if_else(domain_id == "D05", "Upper Midwest", "Northeast"))
+  select(-species_pool, -n_species)
 
 ## fit logistic regression models to simulated data
 logistic_sim_results <- simulated_mamms_df %>%
-  group_by(region, taxon_id, rep) %>%
+  group_by(region, taxon_id, rep, max_richness) %>%
   nest() %>%
   mutate(
-    model = map(data, ~ glm(presence ~ richness, data = ., family = binomial)),
-    intercept = map_dbl(model, ~ coef(.x)[["(Intercept)"]]),
-    coef  = map_dbl(model, ~ coef(.x)[["richness"]]),
+    model = map(data, ~ glm(presence ~ I(1/richness), data = ., family = binomial)),
+    # intercept = map_dbl(model, ~ coef(.x)[["(Intercept)"]]),
+    # coef  = map_dbl(model, ~ coef(.x)[["richness"]]),
     type = "sim",
     preds = map(model, ~ {
-      richness_seq <- seq(0, max(mamms_presence_filtered_df$richness), by = 1)
+      richness_seq <- seq(0, max_richness, by = 1)
       pred_df <- tibble(richness = richness_seq)
       pred_df$fit <- predict(.x, newdata = pred_df, type = "response")
       return(pred_df)
     })
-  ) %>%
-  select(region, taxon_id, rep, coef, intercept, type, preds)
+  )
 
 ## fit logistic regression models to observed data, only for rows where taxon is in species pool
 
 logistic_obs_results <- mamms_presence_filtered_df %>%
-  group_by(region, taxon_id) %>%
+  group_by(region, taxon_id, max_richness) %>%
   nest() %>%
   mutate(
-    model = map(data, ~ glm(presence ~ richness, data = ., family = binomial)),
-    intercept = map_dbl(model, ~ coef(.x)[["(Intercept)"]]),
-    coef  = map_dbl(model, ~ coef(.x)[["richness"]]),
+    model = map(data, ~ glm(presence ~ I(1/richness), data = ., family = binomial)),
+    # intercept = map_dbl(model, ~ coef(.x)[["(Intercept)"]]),
+    # coef  = map_dbl(model, ~ coef(.x)[["richness"]]),
     type = "obs",
     preds = map(model, ~ {
-      richness_seq <- seq(0, max(mamms_presence_filtered_df$richness), by = 1)
+      richness_seq <- seq(0, max_richness, by = 1)
       pred_df <- tibble(richness = richness_seq)
       pred_df$fit <- predict(.x, newdata = pred_df, type = "response")
       return(pred_df)
     })
-  ) %>%
-  select(region, taxon_id, coef, intercept, type, preds)
+  )
 
 ## unnest observed predictions
 logistic_obs_preds <- logistic_obs_results %>%
   unnest(preds) %>%
-  select(region, taxon_id, richness, fit, type)
+  select(region, taxon_id, richness, max_richness, fit, type) %>%
+  mutate(taxon_id = factor(taxon_id, levels = mamms))
+
+ggplot() +
+  geom_line(data = logistic_obs_preds, linewidth = 1.5,
+            aes(x = richness, y = fit, color = taxon_id, linetype = "Observed")) +
+  facet_grid(rows = vars(region), cols = vars(taxon_id),
+             labeller = labeller(.cols = mamm_labels)) +
+  labs(x = "Species Richness", y = "Predicted Probability of Presence") +
+  scale_colour_viridis_d(guide = "none") +
+  scale_fill_viridis_d(guide = "none") +
+  scale_linetype_manual(name = "Data Type", values = c("solid", "dashed"), breaks = c("Observed", "Simulated")) +
+  scale_x_continuous(breaks = seq(1, max(logistic_obs_preds$richness), by = 1),
+                     limits = c(1, max(logistic_obs_preds$richness))) +
+  theme_bw() +
+  theme(axis.title = element_text(size = 24),
+        axis.text = element_text(size = 16),
+        strip.text = element_text(size = 18),
+        legend.title = element_text(size = 18),
+        legend.text = element_text(size = 14),
+        legend.position = "bottom")
 
 ## create ribbon of max and min fits data for simulated predictions
 logistic_sim_pred_ribbon <- logistic_sim_results %>%
   unnest(preds) %>%
-  group_by(region, taxon_id, richness) %>%
+  group_by(region, taxon_id, richness, max_richness) %>%
   summarize(max = max(fit),
             min = min(fit),
-            .groups = "drop")
+            .groups = "drop") %>%
+  mutate(taxon_id = factor(taxon_id, levels = mamms))
 
 mamm_labels <- c(
   PELE = "White-footed\nMouse",
@@ -158,26 +180,33 @@ mamm_labels <- c(
 )
   
 ## combine obs and sim
-logistic_all_preds <- bind_rows(logistic_obs_preds, logistic_sim_pred_ribbon)
+#logistic_all_preds <- bind_rows(logistic_obs_preds, logistic_sim_pred_ribbon)
 
 ggplot() +
   geom_line(data = logistic_obs_preds, linewidth = 1.5,
-            aes(x = richness, y = fit, color = taxon_id)) +
+            aes(x = richness, y = fit, color = taxon_id, linetype = "Observed")) +
   geom_ribbon(data = logistic_sim_pred_ribbon,
-              aes(ymin = min, ymax = max, x = richness, fill = taxon_id, color = taxon_id), 
-              alpha = 0.5, linetype = "dashed") +
+              aes(ymin = min, ymax = max, x = richness, fill = taxon_id, 
+                  color = taxon_id, linetype = "Simulated"), 
+              alpha = 0.25) +
+  geom_line(data = logistic_sim_pred_ribbon,
+            aes(x = richness, y = max, color = taxon_id, linetype = "Simulated"),
+            alpha = 0.5) +
   facet_grid(rows = vars(region), cols = vars(taxon_id),
              labeller = labeller(.cols = mamm_labels)) +
   labs(x = "Species Richness", y = "Predicted Probability of Presence") +
-  scale_colour_viridis_d() +
-  scale_fill_viridis_d() +
-  scale_x_continuous(breaks = seq(1, max(mamms_presence_filtered_df$richness), by = 1),
-                     limits = c(1, max(mamms_presence_filtered_df$richness))) +
+  scale_colour_viridis_d(guide = "none") +
+  scale_fill_viridis_d(guide = "none") +
+  scale_linetype_manual(name = "Data Type", values = c("solid", "dashed"), breaks = c("Observed", "Simulated")) +
+  scale_x_continuous(breaks = seq(1, max(logistic_obs_preds$richness), by = 1),
+                     limits = c(1, max(logistic_obs_preds$richness))) +
   theme_bw() +
-  theme(legend.position = "none",
-        axis.title = element_text(size = 24),
+  theme(axis.title = element_text(size = 24),
         axis.text = element_text(size = 16),
-        strip.text = element_text(size = 18))
+        strip.text = element_text(size = 18),
+        legend.title = element_text(size = 18),
+        legend.text = element_text(size = 14),
+        legend.position = "bottom")
 
 
 ## direct region comparison for pema and pele
