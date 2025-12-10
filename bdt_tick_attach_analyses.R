@@ -215,6 +215,69 @@ ggplot(tick_attach_sim_perc %>% filter(taxon_id %in% mamms, prop_sd > 0),
 tick_attach_sim_join <- tick_attach_sim_join %>%
   mutate(taxon_id = factor(taxon_id, levels = mamms))
 
+test <- tick_attach_sim_join %>%
+  filter(taxon_id %in% "PELE", region == "Northeast")
+
+glmmTMB(num_w_ticks ~ richness + (1|nlcd_class) + (1|year) + (1|mean_month),
+        family = nbinom2, weights = test$num_total,
+        data = test) %>%
+  summary()
+
+tick_attach_num_mods <- tick_attach_sim_join %>%
+  filter(taxon_id %in% mamms) %>%
+  group_by(region) %>%
+  mutate(max_richness = max(richness)) %>%
+  group_by(taxon_id, region, max_richness) %>%
+  nest() %>%
+  mutate(
+    num_mod = map(data, ~ glmmTMB(num_w_ticks ~ richness + (1|nlcd_class) + (1|year) + (1|mean_month),
+                                  family = nbinom2, data = .x)),
+    intercept = map_dbl(num_mod, ~ fixef(.x)$cond[1]),
+    slope = map_dbl(num_mod, ~ fixef(.x)$cond[2]),
+    p_value = map_dbl(num_mod, ~ summary(.x)$coefficients$cond[2,4]),
+    preds = map(num_mod, ~ {
+      newdata <- data.frame(
+        richness = seq(0, max_richness, by = 1),
+        nlcd_class = NA,
+        year = NA,
+        mean_month = NA
+      )
+      newdata$predicted_num <- predict(.x, newdata = newdata, type = "response", re.form = NA)
+      return(newdata)
+    })
+  ) %>%
+  select(-data, -num_mod)
+
+tick_num_preds <- tick_attach_num_mods %>%
+  select(taxon_id, region, preds) %>%
+  unnest(cols = c(preds))
+
+ggplot() +
+  geom_line(data = tick_num_preds %>% filter(taxon_id %in% mamms),
+            aes(x = richness, y = predicted_num, color = taxon_id)) +
+  facet_grid(rows = vars(region), cols = vars(taxon_id)) +
+  scale_color_viridis_d() +
+  labs(x = "Mammal Species Richness", y = "Predicted Number of Species \nw/ Ticks") +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.title = element_text(size = 24),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 16))
+
+tick_attach_sim_sum <- tick_attach_sim_join %>%
+  filter(taxon_id %in% mamms) %>%
+  group_by(taxon_id, region) %>%
+  summarize(
+    num_higher = sum(num_v_sim == "higher"),
+    num_lower = sum(num_v_sim == "lower"),
+    num_within = sum(num_v_sim == "within"),
+    prop_higher = sum(prop_v_sim == "higher") / n(),
+    prop_lower = sum(prop_v_sim == "lower") / n(),
+    prop_within = sum(prop_v_sim == "within") / n(),
+    .groups = "drop"
+  )
+
 ggplot() +
   geom_jitter(data = tick_attach_sim_join %>% filter(taxon_id %in% mamms, prop_v_sim == "within"),
               width = 0.2, height = 0, 
