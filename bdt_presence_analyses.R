@@ -20,6 +20,18 @@ mamms <- c("PELE", "PEMA", "BLBR", "MYGA", "TAST", "NAIN")
 ## nlcd to exclude
 developed <- c("cultivatedCrops", "pastureHay")
 
+plots <- mammal_community_df %>%
+  distinct(plot_id, nlcd_class) %>%
+  arrange(nlcd_class, plot_id)
+
+years <- mammal_community_df %>%
+  distinct(year) %>%
+  arrange(year)
+
+months <- mammal_community_df %>%
+  distinct(mean_month) %>%
+  arrange(mean_month)
+
 ## filter mammal community data for nlcds to exclude
 mamms_presence_df <- mammal_community_df %>%
   filter(!nlcd_class %in% developed) %>%
