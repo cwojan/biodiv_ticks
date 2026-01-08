@@ -5,6 +5,7 @@
 ## loading packages
 library(tidyverse)
 library(glmmTMB)
+library(DHARMa)
 
 ## read mammal community data
 mammal_community_df <- read_rds("processed_data/mammal_community_df_2025-10-16.rds") %>%
@@ -72,6 +73,7 @@ pele_mod <- glmmTMB(prop_w_ticks ~ richness + (1|nlcd_class) + (1|year),
                      data = tick_attach_join %>%
                        filter(taxon_id == "PELE"))
 summary(pele_mod)
+
 
 pele_mod <- glm(prop_w_ticks ~ total_mna,
                 family = "binomial", weights = num_total,
@@ -215,15 +217,24 @@ ggplot(tick_attach_sim_perc %>% filter(taxon_id %in% mamms, prop_sd > 0),
 tick_attach_sim_join <- tick_attach_sim_join %>%
   mutate(taxon_id = factor(taxon_id, levels = mamms))
 
-test <- tick_attach_sim_join %>%
+tick_attach_join <- tick_attach_join %>%
+  mutate(taxon_id = factor(taxon_id, levels = mamms))
+
+test <- tick_attach_join %>%
   filter(taxon_id %in% "PELE", region == "Northeast")
 
-glmmTMB(num_w_ticks ~ richness + (1|nlcd_class) + (1|year) + (1|mean_month),
+test_mod <- glmmTMB(num_w_ticks ~ richness + (1|nlcd_class) + (1|year) + (1|mean_month),
         family = nbinom2, weights = test$num_total,
-        data = test) %>%
-  summary()
+        data = test)
+## simulate residuals
+sim_res <- simulateResiduals(test_mod)
 
-tick_attach_num_mods <- tick_attach_sim_join %>%
+plot(sim_res)
+plotResiduals(test_mod)
+testDispersion(sim_res)
+
+
+tick_attach_num_mods <- tick_attach_join %>%
   filter(taxon_id %in% mamms) %>%
   group_by(region) %>%
   mutate(max_richness = max(richness)) %>%
@@ -231,7 +242,7 @@ tick_attach_num_mods <- tick_attach_sim_join %>%
   nest() %>%
   mutate(
     num_mod = map(data, ~ glmmTMB(num_w_ticks ~ richness + (1|nlcd_class) + (1|year) + (1|mean_month),
-                                  family = nbinom2, data = .x)),
+                                  family = nbinom1, data = .x)),
     intercept = map_dbl(num_mod, ~ fixef(.x)$cond[1]),
     slope = map_dbl(num_mod, ~ fixef(.x)$cond[2]),
     p_value = map_dbl(num_mod, ~ summary(.x)$coefficients$cond[2,4]),
@@ -244,9 +255,12 @@ tick_attach_num_mods <- tick_attach_sim_join %>%
       )
       newdata$predicted_num <- predict(.x, newdata = newdata, type = "response", re.form = NA)
       return(newdata)
-    })
+    }),
+    sim_res = map(num_mod, ~ simulateResiduals(.x)),
+    disp_test = map(sim_res, ~ testDispersion(.x)),
+    disp_p = map_dbl(disp_test, ~ .x$p.value)
   ) %>%
-  select(-data, -num_mod)
+  select(-data, -num_mod, -sim_res, -disp_test)
 
 tick_num_preds <- tick_attach_num_mods %>%
   select(taxon_id, region, preds) %>%
