@@ -5,6 +5,7 @@
 ## load libraries
 library(tidyverse)
 library(sf)
+library(rnaturalearth)
 library(ggspatial)
 library(ggmap)
 
@@ -12,6 +13,12 @@ library(ggmap)
 ## load data
 domains <- read_sf("spatial_data/NEONDomains_2024", layer = "NEON_Domains")
 sites <- read_csv("spatial_data/neon_sites.csv")
+
+states110 <- ne_download(scale = 110, type = "admin_1_states_provinces_lakes", 
+                         category = "cultural", returnclass = "sf")
+
+
+states_proj <- st_transform(states110, crs = 4326)
 
 
 domain_subset <- domains %>%
@@ -24,12 +31,43 @@ domain_subset <- domains %>%
 
 
 sites_sf <- sites %>%
-  select(siteCode, latitude, longitude) %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+  mutate(region = case_when(domainCode %in% c("D01", "D02") ~ "Northeast",
+                            domainCode == "D05" ~ "Upper Midwest",
+                            .default = "Other")) %>%
+  select(region, siteCode, latitude, longitude) %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326) 
 
 domain_proj <- st_transform(domain_subset, crs = 4326)
 
+countries <- ne_download(type = "admin_0_countries_lakes", category = "cultural", scale = 110, returnclass = "sf") %>%
+  st_transform(crs = 4326)
+
+
 ## ggplot
+ggplot() +
+  geom_sf(data = countries, fill = "gray90", color = "black") +
+  geom_sf(data = states_proj, fill = "gray80", color = "black") +
+  # geom_sf(data = domain_proj, color = "gray30", alpha = 0.5,
+  #         linewidth = 0.5, aes(fill = domainName)) +
+  # geom_sf_label(data = domain_proj, aes(label = domainName), nudge_y = c(50000, 1, -0.3)) +
+  geom_sf(data = sites_sf, color = "black", aes(fill = region),
+          shape = 21, stroke = 1, size = 4, alpha = 0.7) +
+  coord_sf(crs = 3857, xlim = c(-10500000, -7550000), ylim = c(4300000, 6300000)) +
+  scale_fill_viridis_d(name = "Region") +
+  annotation_scale(location = "br", width_hint = 0.2) +
+  annotation_north_arrow(location = "br", which_north = "true", 
+                         pad_x = unit(0.1, "in"), pad_y = unit(0.3, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  labs(caption = "Site points from National Ecological Observatory Network (NEON) \n
+       Basemap made with Natural Earth. Free vector and raster map data @ naturalearthdata.com.") +
+  theme_minimal() +
+  theme(axis.title = element_blank(),
+        axis.text = element_blank(),
+        panel.grid = element_blank(),
+        legend.position = c(0.15, 0.15),
+        legend.background = element_rect(fill = "white", color = "black"),
+        panel.background = element_rect(fill = "lightblue", color = NA))
+
 ggplot() +
   annotation_map_tile(type = "osm", zoom = 6) +
   geom_sf(data = domain_proj, fill = NA, linewidth = 0.5) +
