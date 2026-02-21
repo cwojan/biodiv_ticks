@@ -9,11 +9,11 @@ library(janitor)
 
 ## read reference data tables
 ## load data product ids
-data_products <- read_csv("neon_data_ids.csv")
+data_products <- read_csv("logistics_data/neon_data_ids.csv")
 ## reformat data product names
 data_products$data_name <- make_clean_names(data_products$data_category)
 ## load sites of interest
-sites <- read_csv("neon_sites.csv") %>%
+sites <- read_csv("logistics_data/neon_sites.csv") %>%
   clean_names()
 
 ## load the data for each site with the map functional,
