@@ -1,5 +1,6 @@
 ##
-#' file: neon_data_import
+#' file: bdt_neon_data_import.R
+#' author: chris wojan
 #' description: download neon data for use in small mammal biodiversity and tick analysis
 #' using neonUtilities package
 #' Note: this can't overwrite data currently
