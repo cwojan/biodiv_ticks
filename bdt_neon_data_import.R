@@ -12,34 +12,17 @@ library(tidyverse)
 library(janitor)
 
 ## load data product ids
-data_products <- read_csv("neon_data_ids.csv")
+data_products <- read_csv("logistics_data/neon_data_ids.csv")
 ## reformat data product names
 data_products$data_name <- make_clean_names(data_products$data_category)
 ## load sites of interest
-sites <- read_csv("neon_sites.csv")
+sites <- read_csv("logistics_data/neon_sites.csv")
 
 ## create folder for each site code with map
 map(sites$siteCode, ~dir.create(paste0("raw_data/", .x)))
 
-## write function to download data
-download_data <- function(site, dpID, startdate, enddate){
-  ## download data
-  tryCatch({
-    zipsByProduct(site = site, dpID = dpID, savepath = paste0("raw_data/", site),
-                  package = "basic", startdate = startdate, enddate = enddate, check.size = FALSE)
-  }, error = function(e) {
-    message("No data found for ", data_products$data_name[data_products$dpID == dpID])
-  })
-  ## check if data was downloaded
-  if(file.exists(paste0("raw_data/", site, "/filesToStack", str_remove_all(dpID, "DP1\\.|\\.\\d+")))){
-    ## rename folder
-    file.rename(paste0("raw_data/", site, "/filesToStack", str_remove_all(dpID, "DP1\\.|\\.\\d+")), 
-                paste0("raw_data/", site, "/", data_products$data_name[data_products$dpID == dpID], "_", site, "_", startdate, "_", enddate))
-    print(paste("Data downloaded for", data_products$data_name[data_products$dpID == dpID], "at", site))
-  }
-}
-
-## the above function works, but let's add stacking the downloaded data with stackByTable, and renaming the folder of stacked data
+## write a function to download data products for each site,
+## stacking the downloaded data with stackByTable, and renaming the folder of stacked data
 stack_data <- function(site, dpID, startdate, enddate){
   ## download data
   tryCatch({

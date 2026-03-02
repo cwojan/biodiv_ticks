@@ -7,11 +7,6 @@ library(tidyverse)
 library(neonUtilities)
 library(janitor)
 
-## read reference data tables
-## load data product ids
-data_products <- read_csv("logistics_data/neon_data_ids.csv")
-## reformat data product names
-data_products$data_name <- make_clean_names(data_products$data_category)
 ## load sites of interest
 sites <- read_csv("logistics_data/neon_sites.csv") %>%
   clean_names()
@@ -56,7 +51,7 @@ trapping_sessions <- select(mammal_trap_df, plot_id, trapping_date, yday, month)
   group_by(plot_id) %>%
   mutate(plot_date = str_c(plot_id, "_", trapping_date),
          date_diff = c(0, diff(trapping_date)),
-         session = cumsum(date_diff > 10),
+         session = cumsum(date_diff > 10), # count the number of "breaks" in sequential trapping dates
          plot_session = str_c(plot_id, "_", session)) %>%
   group_by(plot_session) %>%
   mutate(mean_yday = mean(yday),

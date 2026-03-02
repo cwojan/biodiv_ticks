@@ -5,7 +5,6 @@
 ## loading packages
 library(tidyverse)
 
-
 ## read mammal community data
 mammal_community_df <- read_rds("processed_data/mammal_community_df_2025-10-16.rds") %>%
   mutate(region = if_else(domain_id == "D05", "Upper Midwest", "Northeast")) %>%
@@ -14,12 +13,13 @@ mammal_community_df <- read_rds("processed_data/mammal_community_df_2025-10-16.r
          max_mna = max(total_mna)) %>%
   ungroup()
 
-## mammals of interest
+## mammals of interest, i.e. the top 6 most common
 mamms <- c("PELE", "PEMA", "BLBR", "MYGA", "TAST", "NAIN")
 
-## nlcd to exclude
+## nlcd classes to exclude
 developed <- c("cultivatedCrops", "pastureHay")
 
+## list out plots years and months
 plots <- mammal_community_df %>%
   distinct(plot_id, nlcd_class) %>%
   arrange(nlcd_class, plot_id)
@@ -36,10 +36,11 @@ months <- mammal_community_df %>%
 mamms_presence_df <- mammal_community_df %>%
   filter(!nlcd_class %in% developed) %>%
   ungroup() %>%
+  ## create site id variable from plot id, and make plot id a factor
   mutate(site_id = str_sub(plot_id, 1, 4),
          plot_id = factor(plot_id))
 
-## generate species pools by nlcd and site
+## generate species pools by nlcd and site, i.e. the list of species observed at each site and nlcd class combination
 site_nlcd_species_pools <- mamms_presence_df %>%
   filter(presence == 1) %>%
   distinct(site_id, nlcd_class, taxon_id) %>%
@@ -48,8 +49,8 @@ site_nlcd_species_pools <- mamms_presence_df %>%
             n_species = n(),
             .groups = "drop")
 
-## create a function to randomly sample n species from the pool of species
-## observed at a site and land cover class combination
+## create a function to randomly sample species from the pool of species
+## observed at a site and land cover class combination, up to the observed richness value
 sample_species <- function(plot, reps = 1000){
   ## grab site id and nlcd class for the plot
   site <- str_sub(string = plot, start = 1, end = 4) ## first four characters of plot_id
@@ -72,7 +73,7 @@ sample_species <- function(plot, reps = 1000){
     distinct() %>%
     arrange(plot_session, richness)
   
-  ## create a data frame of the species samples
+  ## create a data frame of the random species samples
   sample_comms <- expand_grid(session_richness, rep = 1:reps) %>%
     mutate(species_sample = map(richness, ~sample(species_pool, size = .x, replace = FALSE))) 
   
@@ -91,20 +92,21 @@ sample_species <- function(plot, reps = 1000){
   return(out)
 }
 
-test <- sample_species(plot = "BART_001", rep = 2)
 
-## simulate communities for all plots
+## simulate 1000 communities for all plots
 simulated_comms <- map(levels(mamms_presence_df$plot_id), sample_species, reps = 1000, .progress = TRUE)
 
 ## and bind the list of data frames into one data frame
 simulated_comms_df <- bind_rows(simulated_comms)
 rm(simulated_comms)
 
-## filter for mammals of interest
+## filter simulated data for mammals of interest
 simulated_mamms_df <- simulated_comms_df %>%
   filter(taxon_id %in% mamms)
 rm(simulated_comms_df)
 
+## filter observed data for mammals of interest, 
+## and only for rows where the taxon is in the species pool for the site and nlcd class combination
 mamms_presence_filtered_df <- mamms_presence_df %>%
   filter(taxon_id %in% mamms, richness > 0) %>%
   left_join(site_nlcd_species_pools, by = c("site_id", "nlcd_class")) %>%
@@ -114,11 +116,12 @@ mamms_presence_filtered_df <- mamms_presence_df %>%
   select(-species_pool, -n_species)
 
 ## fit logistic regression models to simulated data
+## species presence as a function of species richness
 logistic_sim_results <- simulated_mamms_df %>%
   group_by(region, taxon_id, rep, max_richness) %>%
   nest() %>%
   mutate(
-    model = map(data, ~ glm(presence ~ I(1/richness), data = ., family = binomial)),
+    model = map(data, ~ glm(presence ~ richness, data = ., family = binomial)),
     # intercept = map_dbl(model, ~ coef(.x)[["(Intercept)"]]),
     # coef  = map_dbl(model, ~ coef(.x)[["richness"]]),
     type = "sim",
@@ -131,12 +134,11 @@ logistic_sim_results <- simulated_mamms_df %>%
   )
 
 ## fit logistic regression models to observed data, only for rows where taxon is in species pool
-
 logistic_obs_results <- mamms_presence_filtered_df %>%
   group_by(region, taxon_id, max_richness) %>%
   nest() %>%
   mutate(
-    model = map(data, ~ glm(presence ~ I(1/richness), data = ., family = binomial)),
+    model = map(data, ~ glm(presence ~ richness, data = ., family = binomial)),
     # intercept = map_dbl(model, ~ coef(.x)[["(Intercept)"]]),
     # coef  = map_dbl(model, ~ coef(.x)[["richness"]]),
     type = "obs",
@@ -154,25 +156,6 @@ logistic_obs_preds <- logistic_obs_results %>%
   select(region, taxon_id, richness, max_richness, fit, type) %>%
   mutate(taxon_id = factor(taxon_id, levels = mamms))
 
-ggplot() +
-  geom_line(data = logistic_obs_preds, linewidth = 1.5,
-            aes(x = richness, y = fit, color = taxon_id, linetype = "Observed")) +
-  facet_grid(rows = vars(region), cols = vars(taxon_id),
-             labeller = labeller(.cols = mamm_labels)) +
-  labs(x = "Species Richness", y = "Predicted Probability of Presence") +
-  scale_colour_viridis_d(guide = "none") +
-  scale_fill_viridis_d(guide = "none") +
-  scale_linetype_manual(name = "Data Type", values = c("solid", "dashed"), breaks = c("Observed", "Simulated")) +
-  scale_x_continuous(breaks = seq(1, max(logistic_obs_preds$richness), by = 1),
-                     limits = c(1, max(logistic_obs_preds$richness))) +
-  theme_bw() +
-  theme(axis.title = element_text(size = 24),
-        axis.text = element_text(size = 16),
-        strip.text = element_text(size = 18),
-        legend.title = element_text(size = 18),
-        legend.text = element_text(size = 14),
-        legend.position = "bottom")
-
 ## create ribbon of max and min fits data for simulated predictions
 logistic_sim_pred_ribbon <- logistic_sim_results %>%
   unnest(preds) %>%
@@ -182,6 +165,7 @@ logistic_sim_pred_ribbon <- logistic_sim_results %>%
             .groups = "drop") %>%
   mutate(taxon_id = factor(taxon_id, levels = mamms))
 
+## store nice labels for mammal species for plotting
 mamm_labels <- c(
   PELE = "White-footed\nMouse",
   PEMA = "Deer Mouse",
@@ -191,9 +175,9 @@ mamm_labels <- c(
   NAIN = "W. Jumping\nMouse"
 )
   
-## combine obs and sim
-#logistic_all_preds <- bind_rows(logistic_obs_preds, logistic_sim_pred_ribbon)
 
+## plot predicted presence probabilities for each mammal and region
+## with simulated predictions as a ribbon
 ggplot() +
   geom_line(data = logistic_obs_preds, linewidth = 1.5,
             aes(x = richness, y = fit, color = taxon_id, linetype = "Observed")) +
@@ -219,88 +203,3 @@ ggplot() +
         legend.title = element_text(size = 18),
         legend.text = element_text(size = 14),
         legend.position = "bottom")
-
-
-## direct region comparison for pema and pele
-
-# compare preds
-logistic_pred_compare <- logistic_sim_results %>%
-  unnest(preds) %>%
-  rename(sim_fit = fit) %>%
-  select(region, taxon_id, rep, richness, sim_fit) %>%
-  group_by(region, taxon_id, richness) %>%
-  mutate(mean_fit = mean(sim_fit),
-         sd_fit = sd(sim_fit),
-         scaled_fit = (sim_fit - mean_fit)/sd_fit) %>%
-  left_join(logistic_obs_preds %>%
-              rename(obs_fit = fit),
-            by = c("region", "taxon_id", "richness")) %>%
-  filter(taxon_id %in% c("PELE", "PEMA")) %>%
-  mutate(fit_diff = obs_fit - sim_fit,
-         scaled_fit_diff = (obs_fit - mean_fit)/sd_fit)
-
-pred_compare_dists <- logistic_pred_compare %>%
-  group_by(region, taxon_id, richness) %>%
-  summarize(mean_scaled_diff = mean(scaled_fit_diff),
-            upper_scaled_diff = quantile(scaled_fit_diff, probs = 0.95),
-            lower_scaled_diff = quantile(scaled_fit_diff, probs = 0.05),
-            mean_diff = mean(fit_diff),
-            upper_diff = quantile(fit_diff, probs = 0.95),
-            lower_diff = quantile(fit_diff, probs = 0.05),
-            .groups = "drop")
-
-ggplot(data = pred_compare_dists %>% filter(richness != 0),
-       aes(x = richness, color = region)) +
-  geom_point(aes(y = mean_scaled_diff)) +
-  geom_errorbar(aes(ymin = lower_scaled_diff, ymax = upper_scaled_diff), width = 0.2) +
-  facet_wrap(~ taxon_id, labeller = labeller(.cols = mamm_labels)) +
-  labs(x = "Species Richness", y = "Mean Scaled Difference (Obs - Sim)") +
-  theme_bw()
-
-ggplot(data = pred_compare_dists %>% filter(richness != 0),
-       aes(x = richness, color = region)) +
-  geom_point(aes(y = mean_diff, shape = region), size = 3) +
-  geom_line(aes(y = mean_diff, group = region), linetype = "dashed") +
-  geom_errorbar(aes(ymin = lower_diff, ymax = upper_diff), width = 0.3, linewidth = 0.5) +
-  facet_wrap(~ taxon_id, labeller = labeller(.cols = mamm_labels)) +
-  scale_color_viridis_d(option = "turbo", name = "Region") +
-  scale_shape_discrete(name = "Region") +
-  labs(x = "Species Richness", y = "Difference in Predicted Presence \nProbability (Observed - Simulated)") +
-  scale_x_continuous(breaks = seq(1, max(mamms_presence_filtered_df$richness), by = 1)) +
-  theme_bw() +
-  theme(axis.title = element_text(size = 24),
-        axis.text = element_text(size = 16),
-        strip.text = element_text(size = 18))
-  
-
-
-
-
-
-
-ggplot(logistic_obs_preds, aes(x = richness, y = fit, color = taxon_id)) +
-  geom_line() +
-  facet_wrap(~region) +
-  labs(x = "Species Richness", y = "Probability of Presence") +
-  scale_x_continuous(breaks = seq(0, max(mamms_presence_filtered_df$richness), by = 1)) +
-  theme_bw()
-
-
-ggplot() +
-  geom_line(data = logistic_sim_preds, aes(x = richness, y = fit, color = taxon_id, group = interaction(taxon_id, rep)), alpha = 0.01) +
-  geom_line(data = logistic_obs_preds, aes(x = richness, y = fit, color = taxon_id)) +
-  facet_wrap(~ taxon_id) +
-  labs(x = "Species Richness", y = "Probability of Presence") +
-  scale_x_continuous(breaks = seq(1, max(mamms_presence_filtered_df$richness), by = 1),
-                     limits = c(1, max(mamms_presence_filtered_df$richness))) +
-  theme_bw()
-
-mamms_pres_compare <- mamms_presence_filtered_df %>%
-  filter(taxon_id %in% "PELE") %>%
-  distinct(plot_session, taxon_id)
-
-mna_by_sess_compare <- mna_by_session_corrected %>%
-  filter(taxon_id %in% "PELE") %>%
-  distinct(plot_session, taxon_id)
-
-plot_sessions_missing <- anti_join(mamms_pres_compare, mna_by_sess_compare, by = c("plot_session", "taxon_id"))  
