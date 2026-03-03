@@ -34,7 +34,7 @@ First, it reformats existing columns and adds some helpful columns to the trappi
 
 Next, it separates trapping nights into distinct sessions, i.e., consecutive or semi-consecutive nights. It does this by calculating the difference in date for each plot's trapping nights, and then cumulatively summing the number of "breaks", or date differences \> 10 in each plot's sequence. The session IDs are merged into the main trapping data and saved as an .rds file - mammal_session_df.
 
-Next, we reconfigure the data into a form where each plot and session has a row for each species. We calculate the minimum number alive (MNA) for each species and each session with 1.) the maximum number observed in a night for species that are not given permanent tag; and 2.) the total unique tags observed across nights of a session for species that are given permanent tags. These MNA values are then used to determine species presence, species richness, and relative abundance. The data frame of each species for each plot/session is saved as an .rds file - mammal_community_df.
+Next, we reconfigure the data into a form where each plot and session has a row for each species. We calculate the minimum number alive (MNA) for each species and each session with 1.) the maximum number observed in a night for species that are not given permanent tag; and 2.) the total unique tags observed across nights of a session for species that are given permanent tags. These MNA values are then used to determine species presence, species richness, total MNA (all species), and relative abundance. The data frame of each species for each plot/session is saved as an .rds file - mammal_community_df.
 
 Finally, for only the 6 most common mammals, tick attachment data is filtered out. We take each animal with complete tick attachment data in a session and consider it to have ticks if any tick life stage was attached to it during any night in a session. The resulting data frame features a row for each identifiable mammal with tick info, and columns on species, plot, session, tick attachment etc. It is saved as an .rds file - mammal_tick_captures_df.
 
@@ -64,4 +64,8 @@ The observed and simulated model prediction are all plotted together for each sp
 
 ### Site Map
 
+The "bdt_site_map.R" script is very straightforward. It loads the site locations from the site info .csv file in the logistics_data folder. It uses the rnaturalearth::ne_download() to load shape files of the US state boundaries and the boundaries of countries, in "sf" package format. The site coordinates are transformed into sf format with the projection of the rnaturalearth shape files. The three files are mapped with ggplot, and a north arrow and scale bar are added from the "ggspatial" package.
+
 ### Supplementary Figure
+
+The "bdt_supp_mna_rich.R" script is also straightforward. It loads the mammal_sommunity_df that was created in the processing script, and pares it down to just one row for each plot and trapping session, with columns for total mammals observed (sums of the minimum number alive of each species) and species richness. Then ggplot is used to plot a figure showing how the total mammal count increases with species richness, in separate panels for the Upper Midwest and Northeast sites.

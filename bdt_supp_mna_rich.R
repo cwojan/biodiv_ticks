@@ -1,5 +1,7 @@
-## 
-# supplementary figure
+##
+#' file: bdt_supp_mna_rich.R
+#' author: chris wojan
+#' description: generate figure showing increase in mna with species richness
 ##
 
 library(tidyverse)
@@ -11,11 +13,12 @@ mammal_community_df <- read_rds("processed_data/mammal_community_df_2025-10-16.r
 mammal_mna_rich <- mammal_community_df %>%
   mutate(region = case_when(domain_id %in% c("D01", "D02") ~ "Northeast",
                             domain_id == "D05" ~ "Upper Midwest")) %>%
-  select(plot_session, region, richness, total_mna)
+  select(plot_session, region, richness, total_mna) %>%
+  distinct()
 
 ## plot
 ggplot(mammal_mna_rich, aes(x = factor(richness), y = total_mna)) +
-  geom_jitter(width = 0.1, height = 0, alpha = 0.2, color = "lightgray") +
+  geom_jitter(width = 0.1, height = 0, alpha = 0.4, color = "lightgray") +
   geom_boxplot(fill = NA, color = "black") +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
   facet_grid(region ~ .) +
