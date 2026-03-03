@@ -50,13 +50,17 @@ It starts by creating species pools - lists of species that are observed at a gi
 
 For a given plot and session, the sample_species function draws species from the relevant species pool until the species richness value for that session is reached (without replacement). For example, if a plot's relevant species pool has 10 species, and a given session features 5 species, the function would randomly draw 5 of those 10 species. This process is replicated a default of 1000 times to generate many "simulated" communities.
 
-The sampling function is run for each plot and session, and then filtered down to only the 6 most common species. The obserrved data is filtered such that it only includes rows where the given species is present in the relevant species pool.
+The sampling function is run for each plot and session, and then filtered down to only the 6 most common species. The observed data is filtered such that it only includes rows where the given species is present in the relevant species pool.
 
-For both the observed and simulated communities, binomial regressions of presence asa function of species richness are run for each species and region (Upper Midwest sites and Northeast sites). The coefficients and significance are not of interest, just the comparison of predictions between observed and simulated models are. The non-independence due to site, year, etc. is accounted for because the observed and simulated data have the same non-independence structure.
+For both the observed and simulated communities, binomial regressions of presence as a function of species richness are run for each species and region (Upper Midwest sites and Northeast sites). The coefficients and significance are not of interest, just the comparison of predictions between observed and simulated models are. The non-independence due to site, year, etc. is accounted for because the observed and simulated data have the same non-independence structure.
 
 The observed and simulated model prediction are all plotted together for each species and region.
 
 ### Abundance Analyses
+
+The "bdt_abundance_analyses.R" is very similar to the presence analysis script. However, the bootstrapping function simulates full communities instead of just species assemblages. The "sample_community" function creates communities for plots and sessions that have the same number of total animals, and of the same species that were there. Each individual in the simulated community is drawn from the species that were there, with replacement. Thus, a simulated community will have different proportions of species, generally close to equal proportions among species but with stochasticity.
+
+For each of the 6 most common species, binomial models are run for the proportion of the community the species makes up as a function of species richness, with the total number of animals as the weight for each observation. E.g., if there are 10 animals, and 8 of them were deer mice, that translates to 8 out of 10 "successes" for the binomial model. Predictions from models based on observed proportions and simulated proportions are compared visually in a ggplot.
 
 ### Tick Attachment Analyses
 
@@ -65,6 +69,10 @@ The observed and simulated model prediction are all plotted together for each sp
 ### Site Map
 
 The "bdt_site_map.R" script is very straightforward. It loads the site locations from the site info .csv file in the logistics_data folder. It uses the rnaturalearth::ne_download() to load shape files of the US state boundaries and the boundaries of countries, in "sf" package format. The site coordinates are transformed into sf format with the projection of the rnaturalearth shape files. The three files are mapped with ggplot, and a north arrow and scale bar are added from the "ggspatial" package.
+
+The site coordinates can be found here:
+
+<https://www.neonscience.org/field-site-map-and-info>
 
 ### Supplementary Figure
 
