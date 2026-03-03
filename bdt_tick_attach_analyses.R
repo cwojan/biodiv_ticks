@@ -220,19 +220,6 @@ tick_attach_sim_join <- tick_attach_sim_join %>%
 tick_attach_join <- tick_attach_join %>%
   mutate(taxon_id = factor(taxon_id, levels = mamms))
 
-test <- tick_attach_join %>%
-  filter(taxon_id %in% "PELE", region == "Northeast")
-
-test_mod <- glmmTMB(num_w_ticks ~ richness + (1|nlcd_class) + (1|year) + (1|mean_month),
-        family = nbinom2, weights = test$num_total,
-        data = test)
-## simulate residuals
-sim_res <- simulateResiduals(test_mod)
-
-plot(sim_res)
-plotResiduals(test_mod)
-testDispersion(sim_res)
-
 
 tick_attach_num_mods <- tick_attach_join %>%
   filter(taxon_id %in% mamms) %>%
@@ -262,22 +249,7 @@ tick_attach_num_mods <- tick_attach_join %>%
   ) %>%
   select(-data, -num_mod, -sim_res, -disp_test)
 
-tick_num_preds <- tick_attach_num_mods %>%
-  select(taxon_id, region, preds) %>%
-  unnest(cols = c(preds))
 
-ggplot() +
-  geom_line(data = tick_num_preds %>% filter(taxon_id %in% mamms),
-            aes(x = richness, y = predicted_num, color = taxon_id)) +
-  facet_grid(rows = vars(region), cols = vars(taxon_id)) +
-  scale_color_viridis_d() +
-  labs(x = "Mammal Species Richness", y = "Predicted Number of Species \nw/ Ticks") +
-  theme_bw() +
-  theme(legend.position = "none",
-        axis.title = element_text(size = 24),
-        axis.text = element_text(size = 16),
-        legend.title = element_text(size = 20),
-        legend.text = element_text(size = 16))
 
 tick_attach_sim_sum <- tick_attach_sim_join %>%
   filter(taxon_id %in% mamms) %>%
@@ -291,40 +263,6 @@ tick_attach_sim_sum <- tick_attach_sim_join %>%
     prop_within = sum(prop_v_sim == "within") / n(),
     .groups = "drop"
   )
-
-ggplot() +
-  geom_jitter(data = tick_attach_sim_join %>% filter(taxon_id %in% mamms, prop_v_sim == "within"),
-              width = 0.2, height = 0, 
-              aes(x = richness, y = prop_w_ticks, 
-                  color = "Within", alpha = "Within")) +
-  geom_jitter(data = tick_attach_sim_join %>% filter(taxon_id %in% mamms, prop_v_sim == "higher"),
-              width = 0.2, height = 0, size = 2,
-              aes(x = richness, y = prop_w_ticks, 
-                  color = "Higher", alpha = "Higher")) +
-  geom_jitter(data = tick_attach_sim_join %>% filter(taxon_id %in% mamms, prop_v_sim == "lower"),
-              width = 0.2, height = 0, size = 2,
-              aes(x = richness, y = prop_w_ticks, 
-                  color = "Lower", alpha = "Lower")) +
-  scale_color_manual(name = "Observed vs \n95% Simulated CI",
-                     values = c("Within" = "gray",
-                                "Higher" = "red",
-                                "Lower" = "blue")) +
-  scale_alpha_manual(name = "Observed vs \n95% Simulated CI",
-                     values = c("Within" = 0.5,
-                                "Higher" = 1,
-                                "Lower" = 1)) +
-  labs(x = "Mammal Species Richness", y = "Proportion of Species Pop. w/ Ticks") +
-  facet_wrap(~taxon_id, labeller = as_labeller(mamm_labels)) +
-  scale_x_continuous(breaks = seq(0, 10, by = 1)) +
-  theme_bw() +
-  theme(legend.position = c(0.85,0.25),
-        legend.background = element_rect(fill = "white", color = "black"),
-        strip.text = element_text(size = 20),
-        axis.title = element_text(size = 24),
-        axis.text = element_text(size = 16),
-        legend.title = element_text(size = 20),
-        legend.text = element_text(size = 16))
-
 
 ggplot() +
   geom_jitter(data = tick_attach_sim_join %>% filter(taxon_id %in% mamms, prop_v_sim == "within"),
@@ -359,29 +297,5 @@ ggplot() +
         legend.title = element_text(size = 20),
         legend.text = element_text(size = 16))
 
-
-
-
-
-
-
-## look at raw sim data
-tick_attach_sim_join_raw <- tick_attach_sims %>%
-  left_join(mammal_community_df %>% select(plot_session, year, mean_month,
-                                           nlcd_class, taxon_id, mna, total_mna,
-                                           richness, prop_mna), 
-            by = c("plot_session", "taxon_id")) %>%
-  mutate(site_id = str_sub(plot_session, 1, 4))
-
-ggplot(tick_attach_sim_join_raw %>% filter(taxon_id == "PELE")) +
-  geom_boxplot(aes(x = richness, y = num_w_ticks, group = richness)) +
-  scale_x_continuous(breaks = seq(0, 10, by = 1)) +
-  theme_bw()
-
-## compare to observed
-ggplot(tick_attach_join %>% filter(taxon_id == "PELE")) +
-  geom_boxplot(aes(x = richness, y = num_w_ticks, group = richness)) +
-  scale_x_continuous(breaks = seq(0, 10, by = 1)) +
-  theme_bw()
 
   
