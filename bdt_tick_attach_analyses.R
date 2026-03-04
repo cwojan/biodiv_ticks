@@ -19,10 +19,11 @@ mammal_community_df <- read_rds("processed_data/mammal_community_df_2025-10-16.r
 tick_attachment_df <- read_rds("processed_data/mammal_tick_captures_df_2025-10-21.rds") %>%
   mutate(region = if_else(site_id %in% c("TREE", "STEI", "UNDE"), "Upper Midwest", "Northeast"))
 
-## mammals of interest
+## mammals of interest (top 6 most common species across all sites)
 mamms <- c("PELE", "PEMA", "BLBR", "MYGA", "TAST", "NAIN")
 
-## summarize tick data into proportion of species with ticks
+## summarize tick data into proportion of each species with ticks by plot and session
+## then total number of mammals with tick data and number of those with ticks
 tick_attach_summary <- tick_attachment_df %>%
   group_by(plot_session, taxon_id) %>%
   summarize(
@@ -38,7 +39,7 @@ tick_attach_summary <- tick_attachment_df %>%
   ) %>%
   ungroup()
 
-## join in community variables 
+## join in community variables like richness and minimum number alive
 tick_attach_join <- tick_attach_summary %>%
   left_join(mammal_community_df %>% select(region, plot_session, year, mean_month,
                                            nlcd_class, taxon_id, mna, total_mna,
@@ -46,61 +47,28 @@ tick_attach_join <- tick_attach_summary %>%
             by = c("plot_session", "taxon_id")) %>%
   mutate(site_id = str_sub(plot_session, 1, 4))
 
-check <- tick_attach_join %>%
-  filter(taxon_id == "PELE")
 
-## visualize tick attachment by richness and mna
-ggplot(tick_attach_join %>% filter(taxon_id == "PELE")) +
-  geom_jitter(width = 0, height = 0, 
-              aes(x = total_mna, y = num_w_ticks,)) +
-  geom_smooth(method = "lm",
-              aes(x = total_mna, y = num_w_ticks), color = "black") +
-  facet_wrap(~region) +
-  scale_color_viridis_c() +
-  #scale_x_continuous(breaks = seq(0, 10, by = 1)) +
-  theme_bw()
+## now model the number of animals with ticks for each taxon and region
+## using negative binomial GLMMs with richness as a fixed effect and random intercepts for nlcd_class, year, and mean_month
+tick_attach_num_mods <- tick_attach_join %>%
+  filter(taxon_id %in% mamms) %>%
+  group_by(taxon_id, region) %>%
+  nest() %>%
+  mutate(
+    num_mod = map(data, ~ glmmTMB(num_w_ticks ~ richness + (1|nlcd_class) + (1|year) + (1|mean_month),
+                                  family = nbinom2, data = .x)),
+    intercept = map_dbl(num_mod, ~ fixef(.x)$cond[1]),
+    slope = map_dbl(num_mod, ~ fixef(.x)$cond[2]),
+    p_value = map_dbl(num_mod, ~ summary(.x)$coefficients$cond[2,4]),
+  ) %>%
+  select(-data, -num_mod)
 
-ggplot(tick_attach_join %>% filter(taxon_id == "PELE")) +
-  geom_jitter(width = 0.2, height = 0, 
-              aes(x = richness, y = mna, color = prop_w_ticks)) +
-  scale_color_viridis_c() +
-  scale_x_continuous(breaks = seq(0, 10, by = 1)) +
-  theme_bw()
-
-## test model
-pele_mod <- glmmTMB(prop_w_ticks ~ richness + (1|nlcd_class) + (1|year),
-                     family = "binomial", weights = num_total,
-                     data = tick_attach_join %>%
-                       filter(taxon_id == "PELE"))
-summary(pele_mod)
-
-
-pele_mod <- glm(prop_w_ticks ~ total_mna,
-                family = "binomial", weights = num_total,
-                data = tick_attach_join %>%
-                  filter(taxon_id == "PELE"))
-summary(pele_mod)
-
-## generate prediction heat map
-newdata <- expand.grid(
-  richness = seq(0, 10, by = 1),
-  num_total = seq(0, 50, by = 1),
-  nlcd_class = NA,
-  site_id = NA,
-  year = NA
-)
-newdata$predicted_prop <- predict(pele_mod, newdata = newdata, type = "response")
-newdata$predicted_num <- newdata$predicted_prop * newdata$num_total
-ggplot(newdata, aes(x = richness, y = num_total, fill = predicted_prop)) +
-  geom_tile() +
-  scale_fill_viridis_c(name = "Predicted\nProportion\nwith Ticks") +
-  scale_x_continuous(breaks = seq(0, 10, by = 1)) +
-  labs(x = "Mammal Species Richness", y = "Number of Individuals Sampled") +
-  theme_bw()
 
 ## bootstrap ticks randomly assembling on species by plot_session
 
-## shuffle ticks column in tick attachment df 
+## shuffle ticks column in tick attachment df 1000 times,
+## essentially "re-attaching" ticks to random mammals
+## takes a little while
 tick_attach_sims <- replicate(n = 1000, simplify = FALSE,
                               expr = tick_attachment_df %>%
                                 group_by(plot_session) %>%
@@ -121,7 +89,7 @@ tick_attach_sims <- replicate(n = 1000, simplify = FALSE,
                                 ungroup()) %>%
   bind_rows(.id = "sim_id")
 
-## calculate max and mins for each plot session and taxon
+## calculate max and min animals with ticks for each plot session and taxon based on shuffling
 tick_attach_sim_dists <- tick_attach_sims %>%
   group_by(region, plot_session, taxon_id) %>%
   summarize(
@@ -137,6 +105,7 @@ tick_attach_sim_dists <- tick_attach_sims %>%
   )
 
 ## join community variables and observed values to sim dists
+## for bootstrap comparisons (observed values to 95% CI of simulated values)
 tick_attach_sim_join <- tick_attach_sim_dists %>%
   left_join(mammal_community_df %>% select(plot_session, year, mean_month,
                                            nlcd_class, taxon_id, mna, total_mna,
@@ -154,103 +123,8 @@ tick_attach_sim_join <- tick_attach_sim_dists %>%
                                TRUE ~ "within")
          )
 
-## alternate percentile approach
-tick_attach_sim_perc <- tick_attach_sims %>%
-  group_by(plot_session, taxon_id) %>%
-  nest() %>%
-  left_join(mammal_community_df %>% select(region, plot_session, year, mean_month,
-                                           nlcd_class, taxon_id, mna, total_mna,
-                                           richness, prop_mna), 
-            by = c("plot_session", "taxon_id")) %>%
-  left_join(tick_attach_summary %>%
-              select(plot_session, taxon_id, prop_w_ticks, num_w_ticks, num_total),
-            by = c("plot_session", "taxon_id")) %>%
-  mutate(
-    prop_mean = map_dbl(data, ~ mean(.x$prop_w_ticks)),
-    num_mean = map_dbl(data, ~ mean(.x$num_w_ticks)),
-    prop_sd = map_dbl(data, ~ sd(.x$prop_w_ticks)),
-    num_sd = map_dbl(data, ~ sd(.x$num_w_ticks)),
-    prop_dist = (prop_w_ticks - prop_mean) / prop_sd,
-    num_dist = (num_w_ticks - num_mean) / num_sd,
-    prop_percentile = map_dbl(data, ~ ecdf(.x$prop_w_ticks)(prop_w_ticks)),
-    num_percentile = map_dbl(data, ~ ecdf(.x$num_w_ticks)(num_w_ticks))
-    ) %>%
-  select(-data)
-
-check <- tick_attach_sim_perc %>%
-  filter(prop_percentile == 1)
-
-## visualize percentiles for all taxons across richness
-
-mamm_labels <- c(
-  PELE = "White-footed\nMouse",
-  PEMA = "Deer Mouse",
-  BLBR = "Short-tailed\nShrew",
-  MYGA = "Red-backed\nVole",
-  TAST = "Eastern\nChipmunk",
-  NAIN = "W. Jumping\nMouse"
-)
-
-tick_attach_sim_perc <- tick_attach_sim_perc %>%
-  mutate(taxon_id = factor(taxon_id, levels = mamms))
-
-ggplot(tick_attach_sim_perc %>% filter(taxon_id %in% mamms, prop_sd > 0),
-       aes(x = taxon_id, y = prop_dist, color = taxon_id, fill = taxon_id)) +
-  geom_boxplot(alpha = 0.2, outlier.shape = NA) +
-  geom_jitter(width = 0.2, height = 0, alpha = 0.5) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  facet_grid(rows = vars(region)) +
-  scale_color_viridis_d(guide = "none") +
-  scale_fill_viridis_d(guide = "none") +
-  scale_x_discrete(labels = mamm_labels) +
-  labs(x = "Mammal Species", y = "Standardized Difference in Proportion \nw/ Ticks to Simulated Mean") +
-  theme_bw() +
-  theme(legend.position = c(0.9,0.85),
-        legend.background = element_rect(fill = "white", color = "black"),
-        axis.title = element_text(size = 24),
-        axis.text = element_text(size = 16),
-        legend.title = element_text(size = 20),
-        legend.text = element_text(size = 16))
-
-## visualize results for all taxons across richness
-
-tick_attach_sim_join <- tick_attach_sim_join %>%
-  mutate(taxon_id = factor(taxon_id, levels = mamms))
-
-tick_attach_join <- tick_attach_join %>%
-  mutate(taxon_id = factor(taxon_id, levels = mamms))
-
-
-tick_attach_num_mods <- tick_attach_join %>%
-  filter(taxon_id %in% mamms) %>%
-  group_by(region) %>%
-  mutate(max_richness = max(richness)) %>%
-  group_by(taxon_id, region, max_richness) %>%
-  nest() %>%
-  mutate(
-    num_mod = map(data, ~ glmmTMB(num_w_ticks ~ richness + (1|nlcd_class) + (1|year) + (1|mean_month),
-                                  family = nbinom1, data = .x)),
-    intercept = map_dbl(num_mod, ~ fixef(.x)$cond[1]),
-    slope = map_dbl(num_mod, ~ fixef(.x)$cond[2]),
-    p_value = map_dbl(num_mod, ~ summary(.x)$coefficients$cond[2,4]),
-    preds = map(num_mod, ~ {
-      newdata <- data.frame(
-        richness = seq(0, max_richness, by = 1),
-        nlcd_class = NA,
-        year = NA,
-        mean_month = NA
-      )
-      newdata$predicted_num <- predict(.x, newdata = newdata, type = "response", re.form = NA)
-      return(newdata)
-    }),
-    sim_res = map(num_mod, ~ simulateResiduals(.x)),
-    disp_test = map(sim_res, ~ testDispersion(.x)),
-    disp_p = map_dbl(disp_test, ~ .x$p.value)
-  ) %>%
-  select(-data, -num_mod, -sim_res, -disp_test)
-
-
-
+## summarize number and proportion of observed values that are higher, lower, or within 
+## the 95% CI of simulated values for each taxon and region
 tick_attach_sim_sum <- tick_attach_sim_join %>%
   filter(taxon_id %in% mamms) %>%
   group_by(taxon_id, region) %>%
@@ -264,6 +138,22 @@ tick_attach_sim_sum <- tick_attach_sim_join %>%
     .groups = "drop"
   )
 
+## create nice names for plotting
+mamm_labels <- c(
+  PELE = "White-footed\nMouse",
+  PEMA = "Deer Mouse",
+  BLBR = "Short-tailed\nShrew",
+  MYGA = "Red-backed\nVole",
+  TAST = "Eastern\nChipmunk",
+  NAIN = "W. Jumping\nMouse"
+)
+
+## re order the taxon_id factor for plotting
+tick_attach_sim_join <- tick_attach_sim_join %>%
+  mutate(taxon_id = factor(taxon_id, levels = mamms))
+
+## visualize observed number of mammals with ticks by richness for each taxon and region, 
+## colored by whether observed values are higher, lower, or within the 95% CI of simulated values
 ggplot() +
   geom_jitter(data = tick_attach_sim_join %>% filter(taxon_id %in% mamms, prop_v_sim == "within"),
               width = 0.2, height = 0, 
@@ -296,6 +186,59 @@ ggplot() +
         axis.text = element_text(size = 16),
         legend.title = element_text(size = 20),
         legend.text = element_text(size = 16))
+
+
+## join community variables and observed values, but to a nested data frame this time
+## so we can calculate simulated means, std dev, and 
+## standardized differences between observed data and simulated means for each plot session and taxon
+tick_attach_sim_perc <- tick_attach_sims %>%
+  group_by(plot_session, taxon_id) %>%
+  nest() %>%
+  left_join(mammal_community_df %>% select(region, plot_session, year, mean_month,
+                                           nlcd_class, taxon_id, mna, total_mna,
+                                           richness, prop_mna), 
+            by = c("plot_session", "taxon_id")) %>%
+  left_join(tick_attach_summary %>%
+              select(plot_session, taxon_id, prop_w_ticks, num_w_ticks, num_total),
+            by = c("plot_session", "taxon_id")) %>%
+  mutate(
+    prop_mean = map_dbl(data, ~ mean(.x$prop_w_ticks)),
+    num_mean = map_dbl(data, ~ mean(.x$num_w_ticks)),
+    prop_sd = map_dbl(data, ~ sd(.x$prop_w_ticks)),
+    num_sd = map_dbl(data, ~ sd(.x$num_w_ticks)),
+    prop_dist = (prop_w_ticks - prop_mean) / prop_sd,
+    num_dist = (num_w_ticks - num_mean) / num_sd,
+    prop_percentile = map_dbl(data, ~ ecdf(.x$prop_w_ticks)(prop_w_ticks)),
+    num_percentile = map_dbl(data, ~ ecdf(.x$num_w_ticks)(num_w_ticks))
+    ) %>%
+  select(-data)
+
+
+## re order the taxon_id factor for plotting
+tick_attach_sim_perc <- tick_attach_sim_perc %>%
+  mutate(taxon_id = factor(taxon_id, levels = mamms))
+
+## visualize standardized differences between observed and simulated proportions of mammals with ticks for each taxon and region
+ggplot(tick_attach_sim_perc %>% filter(taxon_id %in% mamms, prop_sd > 0),
+       aes(x = taxon_id, y = prop_dist, color = taxon_id, fill = taxon_id)) +
+  geom_boxplot(alpha = 0.2, outlier.shape = NA) +
+  geom_jitter(width = 0.2, height = 0, alpha = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  facet_grid(rows = vars(region)) +
+  scale_color_viridis_d(guide = "none") +
+  scale_fill_viridis_d(guide = "none") +
+  scale_x_discrete(labels = mamm_labels) +
+  labs(x = "Mammal Species", y = "Standardized Difference in Proportion \nw/ Ticks to Simulated Mean") +
+  theme_bw() +
+  theme(legend.position = c(0.9,0.85),
+        legend.background = element_rect(fill = "white", color = "black"),
+        axis.title = element_text(size = 24),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 16))
+
+
+
 
 
   
