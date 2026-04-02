@@ -112,7 +112,7 @@ nested_sim_comms <- sim_comms_join %>%
 
 species_prop_sim <- nested_sim_comms %>%
   mutate(
-    rich_mod = map(data, ~ glm(prop_mna ~ richness, data = ., weights = total_mna, family = "binomial"),
+    rich_mod = map(data, ~ glm(prop_mna ~ I(1/richness), data = ., weights = total_mna, family = "binomial"),
                           .progress = TRUE)
   )
 

@@ -49,13 +49,13 @@ tick_attach_join <- tick_attach_summary %>%
 
 
 ## now model the number of animals with ticks for each taxon and region
-## using negative binomial GLMMs with richness as a fixed effect and random intercepts for nlcd_class, year, and mean_month
+## using negative binomial GLMMs with richness as a fixed effect, NLCD as fixed due to limited classes, and random intercepts for year and mean_month
 tick_attach_num_mods <- tick_attach_join %>%
   filter(taxon_id %in% mamms) %>%
   group_by(taxon_id, region) %>%
   nest() %>%
   mutate(
-    num_mod = map(data, ~ glmmTMB(num_w_ticks ~ richness + (1|nlcd_class) + (1|year) + (1|mean_month),
+    num_mod = map(data, ~ glmmTMB(num_w_ticks ~ richness + nlcd_class + (1|year) + (1|mean_month),
                                   family = nbinom2, data = .x)),
     intercept = map_dbl(num_mod, ~ fixef(.x)$cond[1]),
     slope = map_dbl(num_mod, ~ fixef(.x)$cond[2]),
