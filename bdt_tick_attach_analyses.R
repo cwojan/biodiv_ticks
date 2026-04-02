@@ -6,6 +6,7 @@
 library(tidyverse)
 library(glmmTMB)
 library(DHARMa)
+library(gt)
 
 ## read mammal community data
 mammal_community_df <- read_rds("processed_data/mammal_community_df_2025-10-16.rds") %>%
@@ -20,7 +21,7 @@ tick_attachment_df <- read_rds("processed_data/mammal_tick_captures_df_2025-10-2
   mutate(region = if_else(site_id %in% c("TREE", "STEI", "UNDE"), "Upper Midwest", "Northeast"))
 
 ## mammals of interest (top 6 most common species across all sites)
-mamms <- c("PELE", "PEMA", "BLBR", "MYGA", "TAST", "NAIN")
+mamms <- c("PELE", "PEMA", "MYGA", "TAST", "NAIN")
 
 ## summarize tick data into proportion of each species with ticks by plot and session
 ## then total number of mammals with tick data and number of those with ticks
@@ -55,7 +56,7 @@ tick_attach_num_mods <- tick_attach_join %>%
   group_by(taxon_id, region) %>%
   nest() %>%
   mutate(
-    num_mod = map(data, ~ glmmTMB(num_w_ticks ~ richness + nlcd_class + (1|year) + (1|mean_month),
+    num_mod = map(data, ~ glmmTMB(num_w_ticks ~ richness + nlcd_class + (1|site_id) + (1|year) + (1|mean_month),
                                   family = nbinom2, data = .x)),
     intercept = map_dbl(num_mod, ~ fixef(.x)$cond[1]),
     slope = map_dbl(num_mod, ~ fixef(.x)$cond[2]),
@@ -63,6 +64,41 @@ tick_attach_num_mods <- tick_attach_join %>%
   ) %>%
   select(-data, -num_mod)
 
+
+
+## modify model output table for plotting
+tick_mod_table <- tick_attach_num_mods %>%
+  ungroup() %>%
+  # add nice names for plotting
+  mutate(taxon_id = factor(taxon_id, levels = mamms),
+         taxon_id = fct_recode(taxon_id, "White-footed Mouse" = "PELE",
+                               "Deer Mouse" = "PEMA",
+                               "Red-backed Vole" = "MYGA",
+                               "Eastern Chipmunk" = "TAST",
+                               "W. Jumping Mouse" = "NAIN"),
+         signif = case_when(p_value < 0.001 ~ "***",
+                            p_value < 0.01 ~ "**",
+                            p_value < 0.05 ~ "*",
+                            p_value < 0.1 ~ ".",
+                            p_value > 0.05 ~ ""),
+         p_value = round(p_value, 3),
+         p_value = if_else(p_value < 0.001, "<0.001", as.character(p_value)),
+         p_value = str_c(p_value, " ", signif))
+  
+
+## create table with model output for each species, stacked by region
+tick_mod_table %>%
+  arrange(region, taxon_id) %>%
+  select(region, taxon_id, intercept, slope, p_value) %>%
+  gt(groupname_col = "region") %>%
+  fmt_number(columns = c(intercept, slope), decimals = 3) %>%
+  cols_align(columns = c(intercept, slope, p_value), align = "center") %>%
+  cols_label(
+    taxon_id = md("**Species**"),
+    intercept = md("**Intercept**"),
+    slope = md("**Richness Slope**"),
+    p_value = md("**Richness P-value**")
+  )
 
 ## bootstrap ticks randomly assembling on species by plot_session
 
@@ -138,6 +174,10 @@ tick_attach_sim_sum <- tick_attach_sim_join %>%
     .groups = "drop"
   )
 
+## re order the taxon_id factor for plotting
+tick_attach_sim_join <- tick_attach_sim_join %>%
+  mutate(taxon_id = factor(taxon_id, levels = mamms))
+
 ## create nice names for plotting
 mamm_labels <- c(
   PELE = "White-footed\nMouse",
@@ -147,10 +187,6 @@ mamm_labels <- c(
   TAST = "Eastern\nChipmunk",
   NAIN = "W. Jumping\nMouse"
 )
-
-## re order the taxon_id factor for plotting
-tick_attach_sim_join <- tick_attach_sim_join %>%
-  mutate(taxon_id = factor(taxon_id, levels = mamms))
 
 ## visualize observed number of mammals with ticks by richness for each taxon and region, 
 ## colored by whether observed values are higher, lower, or within the 95% CI of simulated values

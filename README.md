@@ -66,7 +66,7 @@ For each of the 6 most common species, binomial models are run for the proportio
 
 The "bdt_tick_attach_analyses.R" script examines tick attachment data from multiple angles. But first it summarizes the mammal_tick_captures_df (only mammals with tick data) by finding the number and proportion of each species that have ticks in each session. This is what can be modeled and compared.
 
-The first approach is to simply model the number of animal with tick by taxon and region as a function of species richness, using a negative binomial regression with site, year, and month as random effects. This is just summarized in a data frame.
+The first approach is to simply model the number of animal with tick by taxon and region as a function of species richness, using a negative binomial regression with site, year, and month as random effects (NLCD class as a fixed effect). This is summarized in a table.
 
 The next approaches require simulation / bootstrapping. The presence of ticks on an animal is shuffled by individual 1000 times, to create 100 simulated replicates where ticks have assembled randomly on the mammals present in a session.
 
