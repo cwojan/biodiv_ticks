@@ -281,7 +281,7 @@ tick_plot <- ggplot(tick_attach_sim_perc %>% filter(taxon_id %in% mamms, prop_sd
         legend.title = element_text(size = 20),
         legend.text = element_text(size = 16))
 
-ggsave(tick_plot, filename = "figures/bdt_fig4_ticks.tiff", width = 10, height = 8, units = "in", dpi = 150)
+ggsave(tick_plot, filename = "figures/bdt_fig4_ticks.pdf", width = 10, height = 8, units = "in", dpi = 300)
 
 
 

@@ -194,7 +194,7 @@ presence_plot <- ggplot() +
   scale_colour_viridis_d(guide = "none") +
   scale_fill_viridis_d(guide = "none") +
   scale_linetype_manual(name = "Data Type", values = c("solid", "dashed"), breaks = c("Observed", "Simulated")) +
-  scale_x_continuous(breaks = seq(1, max(logistic_obs_preds$richness), by = 1),
+  scale_x_continuous(breaks = seq(1, max(logistic_obs_preds$richness), by = 2),
                      limits = c(1, max(logistic_obs_preds$richness))) +
   theme_bw() +
   theme(axis.title = element_text(size = 24),
@@ -204,4 +204,4 @@ presence_plot <- ggplot() +
         legend.text = element_text(size = 14),
         legend.position = "bottom")
 
-ggsave(presence_plot, filename = "figures/bdt_fig2_presence.tiff", width = 12, height = 6, units = "in", dpi = 150)
+ggsave(presence_plot, filename = "figures/bdt_fig2_presence.pdf", width = 12, height = 6, units = "in", dpi = 300)

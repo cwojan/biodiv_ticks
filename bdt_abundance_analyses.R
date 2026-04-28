@@ -158,7 +158,7 @@ abundance_plot <- ggplot() +
   scale_colour_viridis_d(guide = "none") +
   scale_fill_viridis_d(guide = "none") +
   scale_linetype_manual(name = "Data Type", values = c("solid", "dashed"), breaks = c("Observed", "Simulated")) +
-  scale_x_continuous(breaks = seq(1, max(rich_preds_obs$richness), by = 1),
+  scale_x_continuous(breaks = seq(1, max(rich_preds_obs$richness), by = 2),
                      limits = c(1, max(rich_preds_obs$richness))) +
   scale_y_continuous(limits = c(0, 1)) +
   theme_bw() +
@@ -169,6 +169,6 @@ abundance_plot <- ggplot() +
         legend.text = element_text(size = 14),
         legend.position = "bottom")
 
-ggsave(abundance_plot, filename = "figures/bdt_fig3_abundance.tiff", width = 12, height = 6, units = "in", dpi = 150)
+ggsave(abundance_plot, filename = "figures/bdt_fig3_abundance.pdf", width = 12, height = 6, units = "in", dpi = 300)
 
 

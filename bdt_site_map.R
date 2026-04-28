@@ -32,7 +32,7 @@ sites_sf <- sites %>%
 
 
 ## draw map with state outlines, canada, and the sites colored by region
-ggplot() +
+sitemap <- ggplot() +
   geom_sf(data = countries, fill = "gray90", color = "black") +
   geom_sf(data = states110, fill = "gray80", color = "black") +
   geom_sf(data = sites_sf, color = "black", aes(fill = region),
@@ -53,7 +53,7 @@ ggplot() +
         legend.background = element_rect(fill = "white", color = "black"),
         panel.background = element_rect(fill = "lightblue", color = NA))
 
-  
+ggsave(sitemap, filename= "figures/bdt_fig1_sitemap.pdf", height = 6, width = 9, dpi = 300)
     
 
 
