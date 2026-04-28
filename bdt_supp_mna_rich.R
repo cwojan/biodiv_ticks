@@ -7,7 +7,7 @@
 library(tidyverse)
 
 # read data
-mammal_community_df <- read_rds("processed_data/mammal_community_df_2025-10-16.rds") 
+mammal_community_df <- read_rds("processed_data/mammal_community_df_2026-04-24.rds") 
 
 ## filter and select
 mammal_mna_rich <- mammal_community_df %>%

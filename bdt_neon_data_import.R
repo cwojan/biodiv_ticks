@@ -52,7 +52,7 @@ stack_data <- function(site, dpID, startdate, enddate){
 
 ## download data for each site
 map2(.x = rep(data_products$dpID, nrow(sites)), .y = rep(sites$siteCode, each = nrow(data_products)), 
-     ~stack_data(site = .y, dpID = .x, startdate = "2012-01-01", enddate = "2024-12-31"))
+     ~stack_data(site = .y, dpID = .x, startdate = "2012-01-01", enddate = "2025-12-31"))
 
 ## create txt file in raw_data folder recording date of download
 write(paste("Data downloaded on", Sys.Date()), file = "raw_data/download_date.txt")

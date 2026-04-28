@@ -7,6 +7,7 @@ library(tidyverse)
 library(glmmTMB)
 library(DHARMa)
 library(gt)
+library(officer)
 
 ## read mammal community data
 mammal_community_df <- read_rds("processed_data/mammal_community_df_2025-10-16.rds") %>%
@@ -87,7 +88,7 @@ tick_mod_table <- tick_attach_num_mods %>%
   
 
 ## create table with model output for each species, stacked by region
-tick_mod_table %>%
+mod_tbl <- tick_mod_table %>%
   arrange(region, taxon_id) %>%
   select(region, taxon_id, intercept, slope, p_value) %>%
   gt(groupname_col = "region") %>%
@@ -98,7 +99,13 @@ tick_mod_table %>%
     intercept = md("**Intercept**"),
     slope = md("**Richness Slope**"),
     p_value = md("**Richness P-value**")
-  )
+  ) %>%
+  as_word()
+
+doc <- read_docx() %>%
+  body_add_xml(mod_tbl)
+
+print(doc, target = "figures/bdt_table1_tick_mods.docx")
 
 ## bootstrap ticks randomly assembling on species by plot_session
 
@@ -255,7 +262,7 @@ tick_attach_sim_perc <- tick_attach_sim_perc %>%
   mutate(taxon_id = factor(taxon_id, levels = mamms))
 
 ## visualize standardized differences between observed and simulated proportions of mammals with ticks for each taxon and region
-ggplot(tick_attach_sim_perc %>% filter(taxon_id %in% mamms, prop_sd > 0),
+tick_plot <- ggplot(tick_attach_sim_perc %>% filter(taxon_id %in% mamms, prop_sd > 0),
        aes(x = taxon_id, y = prop_dist, color = taxon_id, fill = taxon_id)) +
   geom_boxplot(alpha = 0.2, outlier.shape = NA) +
   geom_jitter(width = 0.2, height = 0, alpha = 0.5) +
@@ -270,8 +277,11 @@ ggplot(tick_attach_sim_perc %>% filter(taxon_id %in% mamms, prop_sd > 0),
         legend.background = element_rect(fill = "white", color = "black"),
         axis.title = element_text(size = 24),
         axis.text = element_text(size = 16),
+        strip.text = element_text(size = 18),
         legend.title = element_text(size = 20),
         legend.text = element_text(size = 16))
+
+ggsave(tick_plot, filename = "figures/bdt_fig4_ticks.tiff", width = 10, height = 8, units = "in", dpi = 150)
 
 
 

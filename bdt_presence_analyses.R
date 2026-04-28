@@ -6,7 +6,7 @@
 library(tidyverse)
 
 ## read mammal community data
-mammal_community_df <- read_rds("processed_data/mammal_community_df_2025-10-16.rds") %>%
+mammal_community_df <- read_rds("processed_data/mammal_community_df_2026-04-24.rds") %>%
   mutate(region = if_else(domain_id == "D05", "Upper Midwest", "Northeast")) %>%
   group_by(region) %>%
   mutate(max_richness = max(richness),
@@ -178,7 +178,7 @@ mamm_labels <- c(
 
 ## plot predicted presence probabilities for each mammal and region
 ## with simulated predictions as a ribbon
-ggplot() +
+presence_plot <- ggplot() +
   geom_line(data = logistic_obs_preds, linewidth = 1.5,
             aes(x = richness, y = fit, color = taxon_id, linetype = "Observed")) +
   geom_ribbon(data = logistic_sim_pred_ribbon,
@@ -203,3 +203,5 @@ ggplot() +
         legend.title = element_text(size = 18),
         legend.text = element_text(size = 14),
         legend.position = "bottom")
+
+ggsave(presence_plot, filename = "figures/bdt_fig2_presence.tiff", width = 12, height = 6, units = "in", dpi = 150)

@@ -16,8 +16,8 @@ sites <- read_csv("logistics_data/neon_sites.csv") %>%
 ## and the variable file format: "raw_data/SITE/SITE_small_mammal_box_trapping_2012-01-01_2024-12-31/variables_10072.csv"
 mammal_trap_data <- map(.x = sites$site_code,
                         .f = function(site){
-                          readTableNEON(dataFile = paste0("raw_data/", site, "/", site, "_small_mammal_box_trapping_2012-01-01_2024-12-31/mam_pertrapnight.csv"),
-                                        varFile = paste0("raw_data/", site, "/", site, "_small_mammal_box_trapping_2012-01-01_2024-12-31/variables_10072.csv"))
+                          readTableNEON(dataFile = paste0("raw_data/", site, "/", site, "_small_mammal_box_trapping_2012-01-01_2025-12-31/mam_pertrapnight.csv"),
+                                        varFile = paste0("raw_data/", site, "/", site, "_small_mammal_box_trapping_2012-01-01_2025-12-31/variables_10072.csv"))
                         })
 ## first changing the list we loaded into a data frame, and adding some helpful columns
 mammal_trap_df <- bind_rows(mammal_trap_data) %>%
